@@ -885,6 +885,7 @@ dependencies = [
  "chrono",
  "csv",
  "hex",
+ "http",
  "serde",
  "serde_json",
  "sha2",

@@ -9,4 +9,5 @@ pub struct ImportRecord {
     pub file_name: String,
     pub transaction_count: i32,
     pub duplicate_count: i32,
+    pub skipped_user_count: i32,
 }
