@@ -60,11 +60,11 @@ const navItems = [
 ];
 
 const designTrials = [
-  { id: 1, label: "Command Center" },
-  { id: 2, label: "Zen Minimalist" },
-  { id: 3, label: "Story Mode" },
-  { id: 4, label: "Action Dashboard" },
-  { id: 5, label: "Visual First" },
+  { id: 1, label: "Zen Flow" },
+  { id: 2, label: "Command Deck" },
+  { id: 3, label: "Daily Journal" },
+  { id: 4, label: "Mosaic" },
+  { id: 5, label: "Pulse" },
 ];
 
 export function Sidebar() {
