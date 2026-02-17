@@ -15,12 +15,18 @@ pub fn routes() -> Router<PgPool> {
 }
 
 async fn list_cards(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    let cards: Vec<crate::models::card::Card> = sqlx::query_as(
+    let cards: Vec<crate::models::card::Card> = match sqlx::query_as(
         "SELECT * FROM cards ORDER BY created_at ASC",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to list cards: {e}");
+            Vec::new()
+        }
+    };
 
     Json(serde_json::json!({ "data": cards }))
 }
@@ -29,13 +35,19 @@ async fn get_card(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Json<serde_json::Value> {
-    let card: Option<crate::models::card::Card> = sqlx::query_as(
+    let card: Option<crate::models::card::Card> = match sqlx::query_as(
         "SELECT * FROM cards WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&pool)
     .await
-    .unwrap_or(None);
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch card {id}: {e}");
+            None
+        }
+    };
 
     match card {
         Some(c) => Json(serde_json::json!({ "data": c })),
@@ -77,7 +89,10 @@ async fn create_card(
 
     match result {
         Ok(card) => Json(serde_json::json!({ "data": card })),
-        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+        Err(e) => {
+            tracing::error!("Failed to create card: {e}");
+            Json(serde_json::json!({ "error": e.to_string() }))
+        }
     }
 }
 
@@ -87,13 +102,19 @@ async fn update_card(
     Json(body): Json<UpdateCard>,
 ) -> Json<serde_json::Value> {
     // Fetch existing card, merge with partial update fields
-    let existing: Option<crate::models::card::Card> = sqlx::query_as(
+    let existing: Option<crate::models::card::Card> = match sqlx::query_as(
         "SELECT * FROM cards WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&pool)
     .await
-    .unwrap_or(None);
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch card {id} for update: {e}");
+            None
+        }
+    };
 
     let existing = match existing {
         Some(c) => c,
@@ -141,7 +162,10 @@ async fn update_card(
 
     match result {
         Ok(card) => Json(serde_json::json!({ "data": card })),
-        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+        Err(e) => {
+            tracing::error!("Failed to update card {id}: {e}");
+            Json(serde_json::json!({ "error": e.to_string() }))
+        }
     }
 }
 
@@ -159,6 +183,9 @@ async fn delete_card(
             Json(serde_json::json!({ "data": "Card deleted" }))
         }
         Ok(_) => Json(serde_json::json!({ "error": "Card not found" })),
-        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+        Err(e) => {
+            tracing::error!("Failed to delete card {id}: {e}");
+            Json(serde_json::json!({ "error": e.to_string() }))
+        }
     }
 }

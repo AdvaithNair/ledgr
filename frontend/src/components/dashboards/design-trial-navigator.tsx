@@ -6,17 +6,19 @@ import { cn } from "@/lib/utils";
 
 interface DesignTrialNavigatorProps {
   currentTrial: 1 | 2 | 3 | 4 | 5;
+  useTestData?: boolean;
+  onToggleTestData?: () => void;
 }
 
 const TRIALS = [
-  { id: 1, name: "Command Center", desc: "Dense data grid" },
-  { id: 2, name: "Zen Minimalist", desc: "Focus & calm" },
-  { id: 3, name: "Story Mode", desc: "Narrative finance" },
-  { id: 4, name: "Action Dashboard", desc: "Task-oriented" },
-  { id: 5, name: "Visual First", desc: "Chart gallery" },
+  { id: 1, name: "Zen Minimalist", desc: "Monochrome calm" },
+  { id: 2, name: "Warm Ledger", desc: "Amber & serif elegance" },
+  { id: 3, name: "Arctic Glass", desc: "Frosted Nordic cool" },
+  { id: 4, name: "Neon Dusk", desc: "Cinematic rose glow" },
+  { id: 5, name: "Paper Light", desc: "Editorial light mode" },
 ] as const;
 
-export function DesignTrialNavigator({ currentTrial }: DesignTrialNavigatorProps) {
+export function DesignTrialNavigator({ currentTrial, useTestData, onToggleTestData }: DesignTrialNavigatorProps) {
   const pathname = usePathname();
 
   return (
@@ -41,6 +43,22 @@ export function DesignTrialNavigator({ currentTrial }: DesignTrialNavigatorProps
             </Link>
           );
         })}
+        {onToggleTestData && (
+          <>
+            <div className="mx-1 h-4 w-px bg-border" />
+            <button
+              onClick={onToggleTestData}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs transition-colors",
+                useTestData
+                  ? "bg-amber-500/20 font-medium text-amber-400"
+                  : "text-white/30 hover:bg-white/10 hover:text-white/60"
+              )}
+            >
+              {useTestData ? "Test Data ON" : "Test Data"}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

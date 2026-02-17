@@ -107,8 +107,20 @@ async fn list_transactions(
 
     data_query = data_query.bind(per_page).bind(offset);
 
-    let rows = data_query.fetch_all(&pool).await.unwrap_or_default();
-    let total: i64 = count_query.fetch_one(&pool).await.unwrap_or(0);
+    let rows = match data_query.fetch_all(&pool).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to list transactions: {e}");
+            Vec::new()
+        }
+    };
+    let total: i64 = match count_query.fetch_one(&pool).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!("Failed to count transactions: {e}");
+            0
+        }
+    };
 
     Json(serde_json::json!({
         "data": rows,
@@ -157,10 +169,16 @@ async fn import_csv(
         return Json(serde_json::json!({ "error": "No CSV data received" }));
     }
 
-    let all_cards: Vec<Card> = sqlx::query_as("SELECT * FROM cards ORDER BY created_at ASC")
+    let all_cards: Vec<Card> = match sqlx::query_as("SELECT * FROM cards ORDER BY created_at ASC")
         .fetch_all(&pool)
         .await
-        .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch cards for import: {e}");
+            Vec::new()
+        }
+    };
 
     let card = if let Some(ref code) = card_code {
         match all_cards.iter().find(|c| c.code == *code) {
@@ -182,12 +200,18 @@ async fn import_csv(
         }
     };
 
-    let user_name: Option<String> = sqlx::query_scalar(
+    let user_name: Option<String> = match sqlx::query_scalar(
         "SELECT value FROM user_config WHERE key = 'user_name'",
     )
     .fetch_optional(&pool)
     .await
-    .unwrap_or(None);
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch user_name config: {e}");
+            None
+        }
+    };
 
     let parse_result = match csv_parser::parse_csv(&csv_data, &card, user_name.as_deref()) {
         Ok(r) => r,
@@ -227,7 +251,7 @@ async fn import_csv(
         }
     }
 
-    sqlx::query(
+    if let Err(e) = sqlx::query(
         "INSERT INTO import_history (card, file_name, transaction_count, duplicate_count, skipped_user_count) \
          VALUES ($1, $2, $3, $4, $5)",
     )
@@ -238,7 +262,9 @@ async fn import_csv(
     .bind(parse_result.skipped_user_count as i32)
     .execute(&pool)
     .await
-    .ok();
+    {
+        tracing::error!("Failed to record import history: {e}");
+    }
 
     Json(serde_json::json!({
         "data": {
@@ -254,14 +280,18 @@ async fn import_csv(
 }
 
 async fn delete_all(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    sqlx::query("DELETE FROM transactions")
+    if let Err(e) = sqlx::query("DELETE FROM transactions")
         .execute(&pool)
         .await
-        .ok();
-    sqlx::query("DELETE FROM import_history")
+    {
+        tracing::error!("Failed to delete transactions: {e}");
+    }
+    if let Err(e) = sqlx::query("DELETE FROM import_history")
         .execute(&pool)
         .await
-        .ok();
+    {
+        tracing::error!("Failed to delete import history: {e}");
+    }
     Json(serde_json::json!({ "data": "All transactions deleted" }))
 }
 
@@ -278,7 +308,10 @@ async fn update_category(
 
     match result {
         Ok(_) => Json(serde_json::json!({ "data": "Category updated" })),
-        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+        Err(e) => {
+            tracing::error!("Failed to update category for transaction {id}: {e}");
+            Json(serde_json::json!({ "error": e.to_string() }))
+        }
     }
 }
 
@@ -296,6 +329,9 @@ async fn bulk_update_category(
         Ok(r) => Json(serde_json::json!({
             "data": format!("{} transactions updated", r.rows_affected())
         })),
-        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+        Err(e) => {
+            tracing::error!("Failed to bulk update categories: {e}");
+            Json(serde_json::json!({ "error": e.to_string() }))
+        }
     }
 }

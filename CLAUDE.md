@@ -6,7 +6,7 @@
 
 ## Running
 - `docker-compose up` for backend + database
-- `cd frontend && npm run dev` for frontend (port 3000)
+- `cd frontend && bun dev` for frontend (port 3000)
 
 ## Backend Conventions
 - Routes in `backend/src/routes/`, models in `models/`, business logic in `services/`

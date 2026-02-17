@@ -21,7 +21,7 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: postgres://ledgr:ledgr@db:5432/ledgr
-      RUST_LOG: info
+      RUST_LOG: ledgr_backend=info,tower_http=warn
     depends_on:
       db:
         condition: service_healthy

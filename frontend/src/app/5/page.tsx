@@ -1,40 +1,38 @@
 "use client";
 
 import { DesignTrialNavigator } from "@/components/dashboards/design-trial-navigator";
-import { VisualFirst } from "@/components/dashboards/visual-first";
+import { PaperLight } from "@/components/dashboards/paper-light";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 
 export default function DesignTrial5() {
-  const { summary, monthly, cards, forecast, daily, loading, error } =
+  const { summary, monthly, forecast, anomalies, recurring, insights, loading, error, useTestData, toggleTestData } =
     useDashboardData();
 
   return (
     <div className="pt-12">
-      <DesignTrialNavigator currentTrial={5} />
+      <DesignTrialNavigator currentTrial={5} useTestData={useTestData} onToggleTestData={toggleTestData} />
       {loading ? (
-        <div className="space-y-4">
-          <Skeleton variant="chart" />
-          <div className="grid grid-cols-2 gap-4">
-            <Skeleton variant="chart" />
-            <Skeleton variant="chart" />
-          </div>
+        <div className="mx-auto max-w-3xl space-y-8">
+          <Skeleton className="mx-auto h-20 w-64" />
           <Skeleton variant="chart" />
         </div>
       ) : error || !summary ? (
         <EmptyState
           title="No data yet"
-          description={error || "Import some transactions to see visualizations."}
+          description={error || "Import some transactions to see your dashboard."}
           action={{ label: "Import CSV", href: "/import" }}
+          secondaryAction={{ label: "Use Test Data", onClick: toggleTestData }}
         />
       ) : (
-        <VisualFirst
+        <PaperLight
           summary={summary}
           monthly={monthly}
-          cards={cards}
           forecast={forecast}
-          daily={daily}
+          anomalies={anomalies}
+          recurring={recurring}
+          insights={insights}
         />
       )}
     </div>

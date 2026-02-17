@@ -1,39 +1,38 @@
 "use client";
 
 import { DesignTrialNavigator } from "@/components/dashboards/design-trial-navigator";
-import { StoryMode } from "@/components/dashboards/story-mode";
+import { ArcticGlass } from "@/components/dashboards/arctic-glass";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 
 export default function DesignTrial3() {
-  const { summary, forecast, anomalies, merchants, habits, recurring, loading, error } =
+  const { summary, monthly, forecast, anomalies, recurring, insights, loading, error, useTestData, toggleTestData } =
     useDashboardData();
 
   return (
     <div className="pt-12">
-      <DesignTrialNavigator currentTrial={3} />
+      <DesignTrialNavigator currentTrial={3} useTestData={useTestData} onToggleTestData={toggleTestData} />
       {loading ? (
-        <div className="mx-auto max-w-2xl space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-3/4" />
+        <div className="mx-auto max-w-3xl space-y-8">
+          <Skeleton className="mx-auto h-20 w-64" />
           <Skeleton variant="chart" />
         </div>
       ) : error || !summary ? (
         <EmptyState
           title="No data yet"
-          description={error || "Import some transactions to see your story."}
+          description={error || "Import some transactions to see your dashboard."}
           action={{ label: "Import CSV", href: "/import" }}
+          secondaryAction={{ label: "Use Test Data", onClick: toggleTestData }}
         />
       ) : (
-        <StoryMode
+        <ArcticGlass
           summary={summary}
+          monthly={monthly}
           forecast={forecast}
           anomalies={anomalies}
-          merchants={merchants}
-          habits={habits}
           recurring={recurring}
+          insights={insights}
         />
       )}
     </div>

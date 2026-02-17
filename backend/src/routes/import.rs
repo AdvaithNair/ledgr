@@ -17,60 +17,105 @@ pub fn routes() -> Router<PgPool> {
 }
 
 async fn get_import_history(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    let records: Vec<ImportRecord> =
-        sqlx::query_as("SELECT * FROM import_history ORDER BY imported_at DESC")
-            .fetch_all(&pool)
-            .await
-            .unwrap_or_default();
+    let records: Vec<ImportRecord> = match sqlx::query_as(
+        "SELECT * FROM import_history ORDER BY imported_at DESC",
+    )
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch import history: {e}");
+            Vec::new()
+        }
+    };
 
     Json(serde_json::json!({ "data": records }))
 }
 
 async fn get_summary(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    let total: (f64,) =
-        sqlx::query_as("SELECT COALESCE(SUM(amount::float8), 0) FROM transactions")
-            .fetch_one(&pool)
-            .await
-            .unwrap_or((0.0,));
+    let total: (f64,) = match sqlx::query_as(
+        "SELECT COALESCE(SUM(amount::float8), 0) FROM transactions",
+    )
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch total spent: {e}");
+            (0.0,)
+        }
+    };
 
-    let count: (i64,) =
-        sqlx::query_as("SELECT COUNT(*)::bigint FROM transactions")
-            .fetch_one(&pool)
-            .await
-            .unwrap_or((0,));
+    let count: (i64,) = match sqlx::query_as(
+        "SELECT COUNT(*)::bigint FROM transactions",
+    )
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch transaction count: {e}");
+            (0,)
+        }
+    };
 
-    let by_card: Vec<(String, f64, i64)> = sqlx::query_as(
+    let by_card: Vec<(String, f64, i64)> = match sqlx::query_as(
         "SELECT card, COALESCE(SUM(amount::float8), 0), COUNT(*)::bigint \
          FROM transactions GROUP BY card ORDER BY SUM(amount) DESC",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch spend by card: {e}");
+            Vec::new()
+        }
+    };
 
-    let by_category: Vec<(String, f64, i64)> = sqlx::query_as(
+    let by_category: Vec<(String, f64, i64)> = match sqlx::query_as(
         "SELECT category, COALESCE(SUM(amount::float8), 0), COUNT(*)::bigint \
          FROM transactions GROUP BY category ORDER BY SUM(amount) DESC",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch spend by category: {e}");
+            Vec::new()
+        }
+    };
 
-    let this_month: (f64,) = sqlx::query_as(
+    let this_month: (f64,) = match sqlx::query_as(
         "SELECT COALESCE(SUM(amount::float8), 0) FROM transactions \
          WHERE date >= date_trunc('month', CURRENT_DATE)::date",
     )
     .fetch_one(&pool)
     .await
-    .unwrap_or((0.0,));
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch this month spend: {e}");
+            (0.0,)
+        }
+    };
 
-    let last_month: (f64,) = sqlx::query_as(
+    let last_month: (f64,) = match sqlx::query_as(
         "SELECT COALESCE(SUM(amount::float8), 0) FROM transactions \
          WHERE date >= (date_trunc('month', CURRENT_DATE) - interval '1 month')::date \
          AND date < date_trunc('month', CURRENT_DATE)::date",
     )
     .fetch_one(&pool)
     .await
-    .unwrap_or((0.0,));
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch last month spend: {e}");
+            (0.0,)
+        }
+    };
 
     Json(serde_json::json!({
         "data": {
@@ -89,29 +134,47 @@ async fn get_summary(State(pool): State<PgPool>) -> Json<serde_json::Value> {
 }
 
 async fn get_monthly(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    let monthly: Vec<(String, f64, i64)> = sqlx::query_as(
+    let monthly: Vec<(String, f64, i64)> = match sqlx::query_as(
         "SELECT to_char(date, 'YYYY-MM') as month, COALESCE(SUM(amount::float8), 0), COUNT(*)::bigint \
          FROM transactions GROUP BY to_char(date, 'YYYY-MM') ORDER BY month",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch monthly stats: {e}");
+            Vec::new()
+        }
+    };
 
-    let monthly_by_card: Vec<(String, String, f64)> = sqlx::query_as(
+    let monthly_by_card: Vec<(String, String, f64)> = match sqlx::query_as(
         "SELECT to_char(date, 'YYYY-MM') as month, card, COALESCE(SUM(amount::float8), 0) \
          FROM transactions GROUP BY to_char(date, 'YYYY-MM'), card ORDER BY month",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch monthly stats by card: {e}");
+            Vec::new()
+        }
+    };
 
-    let monthly_by_category: Vec<(String, String, f64)> = sqlx::query_as(
+    let monthly_by_category: Vec<(String, String, f64)> = match sqlx::query_as(
         "SELECT to_char(date, 'YYYY-MM') as month, category, COALESCE(SUM(amount::float8), 0) \
          FROM transactions GROUP BY to_char(date, 'YYYY-MM'), category ORDER BY month",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch monthly stats by category: {e}");
+            Vec::new()
+        }
+    };
 
     Json(serde_json::json!({
         "data": {
@@ -129,13 +192,19 @@ async fn get_monthly(State(pool): State<PgPool>) -> Json<serde_json::Value> {
 }
 
 async fn get_merchants(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    let merchants: Vec<(String, f64, i64)> = sqlx::query_as(
+    let merchants: Vec<(String, f64, i64)> = match sqlx::query_as(
         "SELECT description, COALESCE(SUM(amount::float8), 0), COUNT(*)::bigint \
          FROM transactions GROUP BY description ORDER BY SUM(amount) DESC LIMIT 20",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch top merchants: {e}");
+            Vec::new()
+        }
+    };
 
     Json(serde_json::json!({
         "data": merchants.iter().map(|(desc, total, count)| {
@@ -145,21 +214,33 @@ async fn get_merchants(State(pool): State<PgPool>) -> Json<serde_json::Value> {
 }
 
 async fn get_patterns(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    let day_of_week: Vec<(f64, f64, i64)> = sqlx::query_as(
+    let day_of_week: Vec<(f64, f64, i64)> = match sqlx::query_as(
         "SELECT EXTRACT(DOW FROM date)::float8, COALESCE(SUM(amount::float8), 0), COUNT(*)::bigint \
          FROM transactions GROUP BY EXTRACT(DOW FROM date) ORDER BY EXTRACT(DOW FROM date)",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch day-of-week patterns: {e}");
+            Vec::new()
+        }
+    };
 
-    let day_of_month: Vec<(f64, f64, i64)> = sqlx::query_as(
+    let day_of_month: Vec<(f64, f64, i64)> = match sqlx::query_as(
         "SELECT EXTRACT(DAY FROM date)::float8, COALESCE(SUM(amount::float8), 0), COUNT(*)::bigint \
          FROM transactions GROUP BY EXTRACT(DAY FROM date) ORDER BY EXTRACT(DAY FROM date)",
     )
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch day-of-month patterns: {e}");
+            Vec::new()
+        }
+    };
 
     let day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 

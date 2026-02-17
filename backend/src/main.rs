@@ -5,7 +5,9 @@ mod routes;
 mod services;
 
 use axum::{routing::get, Router};
+use tower_http::classify::StatusInRangeAsFailures;
 use tower_http::cors::{CorsLayer, Any};
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -22,10 +24,15 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    let trace_layer = TraceLayer::new(
+        StatusInRangeAsFailures::new(400..=599).into_make_classifier(),
+    );
+
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .nest("/api", routes::api_routes(pool.clone()))
-        .layer(cors);
+        .layer(cors)
+        .layer(trace_layer);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     tracing::info!("Backend listening on 0.0.0.0:8080");

@@ -13,10 +13,16 @@ pub fn routes() -> Router<PgPool> {
 }
 
 async fn get_config(State(pool): State<PgPool>) -> Json<serde_json::Value> {
-    let rows: Vec<UserConfig> = sqlx::query_as("SELECT * FROM user_config")
+    let rows: Vec<UserConfig> = match sqlx::query_as("SELECT * FROM user_config")
         .fetch_all(&pool)
         .await
-        .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch user config: {e}");
+            Vec::new()
+        }
+    };
 
     let config: HashMap<String, String> = rows.into_iter().map(|r| (r.key, r.value)).collect();
 
@@ -38,6 +44,7 @@ async fn set_config(
         .await;
 
         if let Err(e) = result {
+            tracing::error!("Failed to set config key '{key}': {e}");
             return Json(serde_json::json!({ "error": e.to_string() }));
         }
     }

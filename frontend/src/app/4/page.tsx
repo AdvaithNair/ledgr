@@ -1,37 +1,38 @@
 "use client";
 
 import { DesignTrialNavigator } from "@/components/dashboards/design-trial-navigator";
-import { ActionDashboard } from "@/components/dashboards/action-dashboard";
+import { NeonDusk } from "@/components/dashboards/neon-dusk";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 
 export default function DesignTrial4() {
-  const { summary, forecast, anomalies, habits, recurring, loading, error } =
+  const { summary, monthly, forecast, anomalies, recurring, insights, loading, error, useTestData, toggleTestData } =
     useDashboardData();
 
   return (
     <div className="pt-12">
-      <DesignTrialNavigator currentTrial={4} />
+      <DesignTrialNavigator currentTrial={4} useTestData={useTestData} onToggleTestData={toggleTestData} />
       {loading ? (
-        <div className="space-y-4">
-          <Skeleton variant="card" />
-          <Skeleton variant="card" />
-          <Skeleton variant="card" />
+        <div className="mx-auto max-w-3xl space-y-8">
+          <Skeleton className="mx-auto h-20 w-64" />
+          <Skeleton variant="chart" />
         </div>
       ) : error || !summary ? (
         <EmptyState
           title="No data yet"
-          description={error || "Import some transactions to see your action items."}
+          description={error || "Import some transactions to see your dashboard."}
           action={{ label: "Import CSV", href: "/import" }}
+          secondaryAction={{ label: "Use Test Data", onClick: toggleTestData }}
         />
       ) : (
-        <ActionDashboard
+        <NeonDusk
           summary={summary}
+          monthly={monthly}
           forecast={forecast}
           anomalies={anomalies}
-          habits={habits}
           recurring={recurring}
+          insights={insights}
         />
       )}
     </div>
