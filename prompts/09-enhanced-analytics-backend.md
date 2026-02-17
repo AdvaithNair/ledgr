@@ -889,7 +889,7 @@ curl localhost:8080/api/insights
 # → Should return top 5-8 ranked insights
 
 # Verify merchant normalization on new import
-curl -F "file=@test_amex.csv" localhost:8080/api/transactions/import
+curl -F "file=@tests/test_amex.csv" localhost:8080/api/transactions/import
 curl "localhost:8080/api/transactions?per_page=5"
 # → Transactions should have merchant_normalized field populated
 ```

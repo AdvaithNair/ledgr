@@ -1,4 +1,4 @@
-FROM rust:1.78-slim AS builder
+FROM rust:latest AS builder
 
 WORKDIR /app
 
@@ -9,6 +9,7 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs
 RUN cargo build --release 2>/dev/null || true
 RUN rm -rf src
 
+COPY migrations/ migrations/
 COPY src/ src/
 RUN touch src/main.rs && cargo build --release
 

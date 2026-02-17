@@ -14,6 +14,15 @@
 - All responses as JSON: `{ data?, error?, meta? }`
 - API base: `http://localhost:8080/api/`
 
+## Migrations
+- Uses SQLx file-based migrations in `backend/migrations/`
+- Migrations run automatically on startup via `sqlx::migrate!()`
+- Naming: `NNN_description.sql` (e.g., `001_initial_schema.sql`)
+- To add a schema change: create the next numbered `.sql` file in `backend/migrations/`
+- Migrations are tracked in `_sqlx_migrations` table — each runs exactly once
+- Use `IF NOT EXISTS` / `ON CONFLICT DO NOTHING` where appropriate for safety
+- Never modify an already-applied migration — always create a new one
+
 ## Frontend Conventions
 - `src/app/` for routes, `src/components/` for UI, `src/lib/` for utilities, `src/types/` for types
 - `"use client"` only when needed

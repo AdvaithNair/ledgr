@@ -351,13 +351,13 @@ curl localhost:8080/api/config
 
 # ── Import ──
 # Import a CSV (auto-detect card)
-curl -F "file=@test_amex.csv" localhost:8080/api/transactions/import
+curl -F "file=@tests/test_amex.csv" localhost:8080/api/transactions/import
 
 # Import with explicit card code (for CSVs that can't be auto-detected)
-curl -F "file=@test_custom.csv" -F "card_code=discover" localhost:8080/api/transactions/import
+curl -F "file=@tests/test_custom.csv" -F "card_code=discover" localhost:8080/api/transactions/import
 
 # Import overlapping data (should show duplicates skipped)
-curl -F "file=@test_amex.csv" localhost:8080/api/transactions/import
+curl -F "file=@tests/test_amex.csv" localhost:8080/api/transactions/import
 
 # ── Transactions ──
 curl "localhost:8080/api/transactions?page=1&per_page=10"
