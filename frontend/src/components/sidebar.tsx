@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
 const navItems = [
   {
     label: "Dashboard",
-    href: "/1",
-    matchPaths: ["/1", "/2", "/3", "/4", "/5"],
+    href: "/",
+    matchPaths: ["/"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="1" y="1" width="7" height="7" rx="1" />
@@ -70,6 +70,7 @@ const designTrials = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [labOpen, setLabOpen] = useState(false);
 
   function isActive(item: (typeof navItems)[0]) {
     if (item.matchPaths) return item.matchPaths.some((p) => pathname === p);
@@ -85,7 +86,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-14 items-center justify-between px-4">
         {!collapsed && (
-          <Link href="/1" className="font-mono text-lg font-bold text-white">
+          <Link href="/" className="font-mono text-lg font-bold text-white">
             Ledgr
           </Link>
         )}
@@ -136,13 +137,27 @@ export function Sidebar() {
         {/* Divider */}
         <div className="my-3 border-t border-border" />
 
-        {/* Design Trials */}
+        {/* Lab — Experimental Layouts */}
         {!collapsed && (
-          <p className="px-3 pb-1 text-[10px] uppercase tracking-wider text-white/30">
-            Design Trials
-          </p>
+          <button
+            onClick={() => setLabOpen(!labOpen)}
+            className="flex w-full items-center justify-between px-3 pb-1 text-[10px] uppercase tracking-wider text-white/30 hover:text-white/50 transition-colors"
+          >
+            <span>Lab</span>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className={cn("transition-transform duration-200", labOpen && "rotate-180")}
+            >
+              <path d="M2 4l3 3 3-3" />
+            </svg>
+          </button>
         )}
-        {designTrials.map((trial) => {
+        {(labOpen || collapsed) && designTrials.map((trial) => {
           const active = pathname === `/${trial.id}`;
           return (
             <Link

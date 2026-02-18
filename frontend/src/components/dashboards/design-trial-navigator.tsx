@@ -7,17 +7,18 @@ import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 
 interface DesignTrialNavigatorProps {
-  currentLayout: 1 | 2 | 3 | 4 | 5;
+  currentLayout: 0 | 1 | 2 | 3 | 4 | 5;
   useTestData?: boolean;
   onToggleTestData?: () => void;
 }
 
 const LAYOUTS = [
-  { id: 1, name: "Zen Flow", desc: "Single column, progressive disclosure" },
-  { id: 2, name: "Command Deck", desc: "Dense grid, everything visible" },
-  { id: 3, name: "Daily Journal", desc: "Timeline narrative, scrolling story" },
-  { id: 4, name: "Mosaic", desc: "Bento grid, visual density with breathing room" },
-  { id: 5, name: "Pulse", desc: "Card stack, swipeable metric cards" },
+  { id: 0, name: "Meridian", desc: "The definitive layout", href: "/" },
+  { id: 1, name: "Zen Flow", desc: "Single column, progressive disclosure", href: "/1" },
+  { id: 2, name: "Command Deck", desc: "Dense grid, everything visible", href: "/2" },
+  { id: 3, name: "Daily Journal", desc: "Timeline narrative, scrolling story", href: "/3" },
+  { id: 4, name: "Mosaic", desc: "Bento grid, visual density with breathing room", href: "/4" },
+  { id: 5, name: "Pulse", desc: "Card stack, swipeable metric cards", href: "/5" },
 ] as const;
 
 export function DesignTrialNavigator({
@@ -35,20 +36,27 @@ export function DesignTrialNavigator({
         <span className="px-2 text-xs text-white/30">Layout:</span>
         {LAYOUTS.map((layout) => {
           const isActive =
-            currentLayout === layout.id || pathname === `/${layout.id}`;
+            currentLayout === layout.id ||
+            pathname === layout.href ||
+            (layout.id !== 0 && pathname === `/${layout.id}`);
+          const isMeridian = layout.id === 0;
           return (
             <Link
               key={layout.id}
-              href={`/${layout.id}`}
+              href={layout.href}
               title={layout.desc}
               className={cn(
                 "rounded-full px-3 py-1 text-xs transition-colors whitespace-nowrap",
-                isActive
-                  ? "bg-white font-medium text-black"
-                  : "text-gray-400 hover:bg-white/10 hover:text-white"
+                isActive && isMeridian
+                  ? "bg-sky-400/20 font-medium text-sky-300 border border-sky-400/30"
+                  : isActive
+                    ? "bg-white font-medium text-black"
+                    : isMeridian
+                      ? "text-sky-300/60 hover:bg-sky-400/10 hover:text-sky-200"
+                      : "text-gray-400 hover:bg-white/10 hover:text-white"
               )}
             >
-              {layout.id}. {layout.name}
+              {isMeridian ? layout.name : `${layout.id}. ${layout.name}`}
             </Link>
           );
         })}
