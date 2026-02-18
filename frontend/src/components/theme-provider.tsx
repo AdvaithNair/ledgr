@@ -40,6 +40,7 @@ export interface ThemeConfig {
   headingWeight: string;
   headingColor: string;
   bodyLineHeight: string;
+  sidebarBg: string;
   barRadius: [number, number, number, number];
 }
 
@@ -78,6 +79,7 @@ const ARCTIC_DARK: ThemeConfig = {
   headingItalic: false,
   headingWeight: "700",
   headingColor: "#FFFFFF",
+  sidebarBg: "#07070A",
   bodyLineHeight: "1.5",
   barRadius: [0, 4, 4, 0],
 };
@@ -117,6 +119,7 @@ const ARCTIC_LIGHT: ThemeConfig = {
   headingItalic: false,
   headingWeight: "700",
   headingColor: "#0C1A2E",
+  sidebarBg: "#E4EEFB",
   bodyLineHeight: "1.5",
   barRadius: [0, 4, 4, 0],
 };
@@ -156,6 +159,7 @@ const PAPER_DARK: ThemeConfig = {
   headingItalic: true,
   headingWeight: "400",
   headingColor: "#34D399",
+  sidebarBg: "#120F0D",
   bodyLineHeight: "1.75",
   barRadius: [0, 3, 3, 0],
 };
@@ -195,6 +199,7 @@ const PAPER_LIGHT: ThemeConfig = {
   headingItalic: true,
   headingWeight: "400",
   headingColor: "#059669",
+  sidebarBg: "#F3F2EF",
   bodyLineHeight: "1.75",
   barRadius: [0, 3, 3, 0],
 };

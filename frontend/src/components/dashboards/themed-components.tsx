@@ -74,14 +74,12 @@ export function ThemedBackground({ children }: { children: ReactNode }) {
         style={{
           backgroundColor: theme.bg,
           color: theme.text,
-          borderRadius: "24px 24px 0 0",
-          boxShadow: "0 0 80px rgba(0,0,0,0.3)",
           minHeight: "100vh",
         }}
       >
         {/* Arctic light gets subtle frost blobs behind the content */}
         {theme.style === "arctic" && (
-          <div className="pointer-events-none absolute inset-0 overflow-hidden" style={{ borderRadius: "24px 24px 0 0" }}>
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div
               className="absolute top-20 left-1/4 h-80 w-80 rounded-full"
               style={{
@@ -335,7 +333,7 @@ export function ThemedTh({ children, className, numeric }: { children: ReactNode
   const { theme } = useTheme();
   return (
     <th
-      className={cn("pb-3 text-left text-[10px] uppercase tracking-widest font-normal", numeric && "text-right", className)}
+      className={cn("py-3 text-left text-[10px] uppercase tracking-widest font-normal", numeric && "text-right", className)}
       style={{ color: theme.labelColor, fontFamily: theme.bodyFont }}
     >
       {children}

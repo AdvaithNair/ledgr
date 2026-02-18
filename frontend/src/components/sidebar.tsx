@@ -2,10 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { useTheme, type ThemeStyle, type ThemeMode } from "@/components/theme-provider";
+import {
+  useTheme,
+  ARCTIC_DARK,
+  ARCTIC_LIGHT,
+  PAPER_DARK,
+  PAPER_LIGHT,
+  type ThemeStyle,
+  type ThemeMode,
+} from "@/components/theme-provider";
 
 const navItems = [
   {
@@ -60,45 +68,235 @@ const navItems = [
   },
 ];
 
-const THEME_CYCLE: { style: ThemeStyle; mode: ThemeMode }[] = [
-  { style: "arctic", mode: "dark" },
-  { style: "arctic", mode: "light" },
-  { style: "paper", mode: "dark" },
-  { style: "paper", mode: "light" },
+// ── Theme preview data ──
+const THEME_OPTIONS: {
+  style: ThemeStyle;
+  mode: ThemeMode;
+  label: string;
+  config: typeof ARCTIC_DARK;
+}[] = [
+  { style: "arctic", mode: "dark", label: "Arctic Dark", config: ARCTIC_DARK },
+  { style: "arctic", mode: "light", label: "Arctic Light", config: ARCTIC_LIGHT },
+  { style: "paper", mode: "dark", label: "Paper Dark", config: PAPER_DARK },
+  { style: "paper", mode: "light", label: "Paper Light", config: PAPER_LIGHT },
 ];
 
-function getThemeLabel(style: ThemeStyle, mode: ThemeMode): string {
-  const styleName = style === "arctic" ? "Arctic" : "Paper";
-  const modeName = mode === "dark" ? "Dark" : "Light";
-  return `${styleName} ${modeName}`;
+// ── Mini theme preview swatch ──
+function ThemePreview({
+  config,
+  label,
+  isActive,
+  onClick,
+  hostTheme,
+}: {
+  config: typeof ARCTIC_DARK;
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+  hostTheme: typeof ARCTIC_DARK;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 w-full"
+      style={{
+        backgroundColor: isActive ? hostTheme.accentMuted : "transparent",
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.backgroundColor =
+            hostTheme.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.backgroundColor = "transparent";
+        }
+      }}
+    >
+      {/* Mini preview card */}
+      <div
+        className="relative flex-shrink-0 overflow-hidden rounded-md"
+        style={{
+          width: 44,
+          height: 30,
+          backgroundColor: config.bg,
+          border: `1px solid ${config.mode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"}`,
+          boxShadow: config.mode === "dark"
+            ? "0 1px 4px rgba(0,0,0,0.4)"
+            : "0 1px 4px rgba(0,0,0,0.08)",
+        }}
+      >
+        {/* Tiny sidebar sliver */}
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 9,
+            backgroundColor: config.sidebarBg,
+            borderRight: `0.5px solid ${config.border}`,
+          }}
+        />
+        {/* Nav dot */}
+        <div
+          style={{
+            position: "absolute",
+            left: 3,
+            top: 6,
+            width: 3,
+            height: 3,
+            borderRadius: "50%",
+            backgroundColor: config.accent,
+          }}
+        />
+        {/* Tiny accent heading */}
+        <div
+          style={{
+            position: "absolute",
+            left: 13,
+            top: 5,
+            width: 18,
+            height: 2.5,
+            borderRadius: 1,
+            backgroundColor: config.accent,
+          }}
+        />
+        {/* Tiny content lines */}
+        <div
+          style={{
+            position: "absolute",
+            left: 13,
+            top: 11,
+            width: 24,
+            height: 1.5,
+            borderRadius: 0.5,
+            backgroundColor: config.text,
+            opacity: 0.18,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 13,
+            top: 16,
+            width: 16,
+            height: 1.5,
+            borderRadius: 0.5,
+            backgroundColor: config.text,
+            opacity: 0.1,
+          }}
+        />
+        {/* Tiny chart bar */}
+        <div
+          style={{
+            position: "absolute",
+            left: 13,
+            top: 22,
+            width: 8,
+            height: 4,
+            borderRadius: "1px 1px 0 0",
+            backgroundColor: config.accent,
+            opacity: 0.3,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 23,
+            top: 20,
+            width: 8,
+            height: 6,
+            borderRadius: "1px 1px 0 0",
+            backgroundColor: config.accent,
+            opacity: 0.5,
+          }}
+        />
+      </div>
+
+      {/* Label + accent dot */}
+      <div className="flex flex-col gap-0.5">
+        <span
+          className="text-[12px] font-medium whitespace-nowrap leading-tight"
+          style={{
+            color: isActive ? hostTheme.accent : hostTheme.text,
+          }}
+        >
+          {label}
+        </span>
+        <span
+          className="text-[10px] whitespace-nowrap leading-tight"
+          style={{ color: hostTheme.textMuted }}
+        >
+          {config.style === "arctic" ? "Frosted glass" : "Editorial"} · {config.mode === "dark" ? "Dark" : "Light"}
+        </span>
+      </div>
+
+      {/* Active check */}
+      {isActive && (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          className="ml-auto flex-shrink-0"
+        >
+          <path
+            d="M3 7.5l2.5 2.5L11 4"
+            stroke={hostTheme.accent}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </button>
+  );
 }
 
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const { theme, style, mode, setStyle, setMode } = useTheme();
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   function isActive(item: (typeof navItems)[0]) {
     if (item.matchPaths) return item.matchPaths.some((p) => pathname === p);
     return pathname === item.href;
   }
 
-  function cycleTheme() {
-    const currentIndex = THEME_CYCLE.findIndex(
-      (t) => t.style === style && t.mode === mode
-    );
-    const next = THEME_CYCLE[(currentIndex + 1) % THEME_CYCLE.length];
-    setStyle(next.style);
-    setMode(next.mode);
+  function selectTheme(s: ThemeStyle, m: ThemeMode) {
+    setStyle(s);
+    setMode(m);
+    setThemePickerOpen(false);
   }
+
+  // Close picker on outside click
+  useEffect(() => {
+    if (!themePickerOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setThemePickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [themePickerOpen]);
+
+  const themeLabel =
+    (style === "arctic" ? "Arctic" : "Paper") +
+    " " +
+    (mode === "dark" ? "Dark" : "Light");
 
   return (
     <motion.aside
       animate={{ width: collapsed ? 64 : 240 }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
-      className="flex h-screen flex-col overflow-hidden"
+      className="relative flex h-screen flex-col overflow-visible"
       style={{
-        backgroundColor: theme.bg,
+        backgroundColor: theme.sidebarBg,
         borderRight: `1px solid ${theme.border}`,
         fontFamily: theme.bodyFont,
       }}
@@ -131,19 +329,8 @@ export function Sidebar() {
           onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            {collapsed ? (
-              <path d="M6 3l5 5-5 5" />
-            ) : (
-              <path d="M10 3L5 8l5 5" />
-            )}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            {collapsed ? <path d="M6 3l5 5-5 5" /> : <path d="M10 3L5 8l5 5" />}
           </svg>
         </button>
       </div>
@@ -156,22 +343,16 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
-              )}
+              className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors")}
               style={{
                 backgroundColor: active ? theme.accentMuted : "transparent",
                 color: active ? theme.accent : theme.textMuted,
               }}
               onMouseEnter={(e) => {
-                if (!active) {
-                  e.currentTarget.style.color = theme.text;
-                }
+                if (!active) e.currentTarget.style.color = theme.text;
               }}
               onMouseLeave={(e) => {
-                if (!active) {
-                  e.currentTarget.style.color = theme.textMuted;
-                }
+                if (!active) e.currentTarget.style.color = theme.textMuted;
               }}
               title={collapsed ? item.label : undefined}
             >
@@ -194,50 +375,129 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom — theme indicator + cycle */}
+      {/* Bottom — theme picker trigger */}
       <div
-        className="p-3"
+        className="relative p-3"
         style={{ borderTop: `1px solid ${theme.border}` }}
+        ref={pickerRef}
       >
+        {/* Theme picker popup */}
+        <AnimatePresence>
+          {themePickerOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.96 }}
+              transition={{ duration: 0.15, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] }}
+              className="absolute z-50 overflow-hidden rounded-xl"
+              style={{
+                bottom: "calc(100% + 8px)",
+                left: collapsed ? "8px" : "12px",
+                right: collapsed ? undefined : "12px",
+                width: collapsed ? "200px" : undefined,
+                backgroundColor: theme.sidebarBg,
+                border: `1px solid ${theme.border}`,
+                boxShadow:
+                  theme.mode === "dark"
+                    ? "0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.03)"
+                    : "0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div
+                className="px-3 py-2"
+                style={{
+                  borderBottom: `1px solid ${theme.border}`,
+                }}
+              >
+                <span
+                  className="text-[10px] uppercase tracking-widest font-medium"
+                  style={{ color: theme.textMuted }}
+                >
+                  Theme
+                </span>
+              </div>
+              <div className="p-1.5 flex flex-col gap-0.5">
+                {THEME_OPTIONS.map((opt) => {
+                  const isCurrentTheme = opt.style === style && opt.mode === mode;
+                  return (
+                    <ThemePreview
+                      key={`${opt.style}-${opt.mode}`}
+                      config={opt.config}
+                      label={opt.label}
+                      isActive={isCurrentTheme}
+                      onClick={() => selectTheme(opt.style, opt.mode)}
+                      hostTheme={theme}
+                    />
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Trigger button */}
         {collapsed ? (
           <div className="flex flex-col items-center gap-2">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: theme.accent }}
-            />
             <button
-              onClick={cycleTheme}
-              className="rounded p-1 transition-colors"
-              style={{ color: theme.textMuted }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = theme.text)}
-              onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
-              title="Cycle theme"
+              onClick={() => setThemePickerOpen(!themePickerOpen)}
+              className="rounded p-1.5 transition-colors"
+              style={{
+                color: themePickerOpen ? theme.accent : theme.textMuted,
+                backgroundColor: themePickerOpen ? theme.accentMuted : "transparent",
+              }}
+              onMouseEnter={(e) => {
+                if (!themePickerOpen) e.currentTarget.style.color = theme.text;
+              }}
+              onMouseLeave={(e) => {
+                if (!themePickerOpen) e.currentTarget.style.color = theme.textMuted;
+              }}
+              title="Change theme"
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M1 8a7 7 0 0 1 13-3.5M15 8a7 7 0 0 1-13 3.5" />
-                <path d="M14 1v3.5h-3.5M2 15v-3.5h3.5" />
+              {/* Palette icon */}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="8" cy="8" r="6.5" />
+                <circle cx="8" cy="5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="5.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="6.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="10.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
               </svg>
             </button>
           </div>
         ) : (
           <button
-            onClick={cycleTheme}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors"
-            style={{ color: theme.textMuted }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = theme.text)}
-            onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
-            title="Cycle theme"
+            onClick={() => setThemePickerOpen(!themePickerOpen)}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs transition-colors"
+            style={{
+              color: themePickerOpen ? theme.accent : theme.textMuted,
+              backgroundColor: themePickerOpen ? theme.accentMuted : "transparent",
+            }}
+            onMouseEnter={(e) => {
+              if (!themePickerOpen) e.currentTarget.style.color = theme.text;
+            }}
+            onMouseLeave={(e) => {
+              if (!themePickerOpen) e.currentTarget.style.color = theme.textMuted;
+            }}
           >
             <span
               className="h-2 w-2 flex-shrink-0 rounded-full"
               style={{ backgroundColor: theme.accent }}
             />
             <span className="flex-1 text-left whitespace-nowrap">
-              {getThemeLabel(style, mode)}
+              {themeLabel}
             </span>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M1 8a7 7 0 0 1 13-3.5M15 8a7 7 0 0 1-13 3.5" />
-              <path d="M14 1v3.5h-3.5M2 15v-3.5h3.5" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              style={{
+                transform: themePickerOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.15s ease",
+              }}
+            >
+              <path d="M3 5l3-3 3 3" />
             </svg>
           </button>
         )}

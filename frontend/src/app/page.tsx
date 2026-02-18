@@ -1,6 +1,5 @@
 "use client";
 
-import { DesignTrialNavigator } from "@/components/dashboards/design-trial-navigator";
 import { Meridian } from "@/components/dashboards/layouts/meridian";
 import { ThemedSkeleton } from "@/components/ui/themed-skeleton";
 import { ThemedEmptyState } from "@/components/ui/themed-empty-state";
@@ -25,12 +24,7 @@ export default function DashboardPage() {
   } = useDashboardData();
 
   return (
-    <div className="pt-14">
-      <DesignTrialNavigator
-        currentLayout={0}
-        useTestData={useTestData}
-        onToggleTestData={toggleTestData}
-      />
+    <div>
       {loading ? (
         <div className="mx-auto max-w-4xl space-y-8 px-6 pt-12">
           <ThemedSkeleton variant="heading" className="mx-auto" />

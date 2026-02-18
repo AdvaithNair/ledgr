@@ -12,7 +12,7 @@ import {
   Source_Serif_4,
 } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Sidebar } from "@/components/sidebar";
+import { AppShell } from "@/components/app-shell";
 import "./globals.css";
 
 const inter = Inter({
@@ -95,10 +95,7 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} ${cormorant.variable} ${libreBaskerville.variable} ${outfit.variable} ${dmSans.variable} ${syne.variable} ${lexend.variable} ${fraunces.variable} ${sourceSerif.variable} antialiased`}
       >
         <ThemeProvider>
-          <div className="flex h-screen">
-            <Sidebar />
-            <main className="flex-1 overflow-y-auto">{children}</main>
-          </div>
+          <AppShell>{children}</AppShell>
         </ThemeProvider>
       </body>
     </html>
