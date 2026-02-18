@@ -52,6 +52,19 @@
 - Auto-detects card type from CSV headers when possible, manual dropdown fallback
 - Each card defines its own CSV column mapping for flexible format support
 
+## Testing
+- Backend uses integration tests (`backend/tests/`) + unit tests (`#[cfg(test)]` in service files)
+- `backend/src/lib.rs` re-exports all modules so integration tests can access them
+- Integration tests use `tower::ServiceExt::oneshot()` on the Axum router (no HTTP server needed)
+- Test database: `ledgr_test` on the same Postgres instance — set up via `bash backend/scripts/setup_test_db.sh`
+- Each integration test calls `clean()` then `seed_transactions()` for isolation
+- Run all tests: `cd backend && cargo test`
+- Run unit tests only (no DB): `cd backend && cargo test --lib`
+- Dev dependencies: `tower`, `http-body-util`, `mime`
+- **When adding a new endpoint:** add an integration test in `backend/tests/` (happy path + empty DB)
+- **When adding a new service function:** add unit tests in `#[cfg(test)] mod tests` at bottom of file
+- Test naming: `test_<endpoint>_<scenario>` for integration, `test_<function>_<scenario>` for unit
+
 ## CORS
 - Backend allows `localhost:3000`
 

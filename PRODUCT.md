@@ -49,10 +49,10 @@ A single technically-comfortable individual who:
 ## Design Constraints
 
 - **Fully local** — No external API calls, no analytics, no telemetry. Docker + localhost only.
-- **Dark theme only** — Background `#0A0A0F`, surfaces `#141419`, borders `#1E1E26`. No light mode.
+- **Two aesthetic modes** — Arctic (frosted glass, sky-blue accents, Outfit + DM Sans) and Paper (editorial warmth, emerald accents, Fraunces + Source Serif 4). Each supports dark and light variants. Dark is the default.
 - **Card-agnostic** — 3 presets (Amex, Citi, Capital One) but users can add any card with any color and CSV mapping.
 - **No authentication** — Single-user local app. The machine IS the auth boundary.
-- **Typography-driven** — JetBrains Mono for financial data (precision), Inter for UI chrome (clarity).
+- **Typography-driven** — Display fonts for headings and hero numbers (Outfit or Fraunces), body fonts for prose (DM Sans or Source Serif 4), JetBrains Mono for financial data. Font pairing changes with the active theme.
 - **Progressive disclosure** — Most important info is biggest and first. Details on demand, never by default.
 
 ---

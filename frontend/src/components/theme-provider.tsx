@@ -264,13 +264,41 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const theme = getTheme(style, mode);
 
-  if (!mounted) return null;
+  // Set data attribute on html for CSS selectors (scrollbar, color-scheme)
+  useEffect(() => {
+    if (mounted) {
+      document.documentElement.dataset.themeMode = mode;
+      document.documentElement.dataset.themeStyle = style;
+    }
+  }, [mounted, mode, style]);
 
+  // Render with default theme during SSR to avoid flash-of-nothing
   return (
     <ThemeContext.Provider value={{ theme, style, mode, setStyle, setMode }}>
-      {children}
+      <div style={{ visibility: mounted ? "visible" : "hidden" }}>
+        {children}
+      </div>
     </ThemeContext.Provider>
   );
+}
+
+// Convenience hook for frequently-used color tokens
+export function useThemeColors() {
+  const { theme } = useTheme();
+  return {
+    text: theme.text,
+    textMuted: theme.textMuted,
+    bg: theme.bg,
+    surface: theme.surface,
+    border: theme.border,
+    accent: theme.accent,
+    danger: theme.danger,
+    success: theme.success,
+    displayFont: theme.displayFont,
+    bodyFont: theme.bodyFont,
+    mode: theme.mode,
+    style: theme.style,
+  };
 }
 
 export { ARCTIC_DARK, ARCTIC_LIGHT, PAPER_DARK, PAPER_LIGHT };

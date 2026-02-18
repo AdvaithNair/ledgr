@@ -231,8 +231,8 @@ async fn import_csv(
         }
 
         let result = sqlx::query(
-            "INSERT INTO transactions (date, description, amount, category, card, card_label, raw_data, hash) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            "INSERT INTO transactions (date, description, amount, category, card, card_label, raw_data, hash, merchant_normalized) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(txn.date)
         .bind(&txn.description)
@@ -242,6 +242,7 @@ async fn import_csv(
         .bind(&txn.card_label)
         .bind(&txn.raw_data)
         .bind(&txn.hash)
+        .bind(&txn.merchant_normalized)
         .execute(&pool)
         .await;
 

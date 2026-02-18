@@ -12,12 +12,12 @@
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", monospace;
 }
 
-body {
-  background: var(--color-bg);
-  color: #ffffff;
+/* Light mode color scheme */
+[data-theme-mode="light"] {
+  color-scheme: light;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar — adapts to theme mode */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -34,4 +34,22 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #2a2a35;
+}
+
+[data-theme-mode="light"]::-webkit-scrollbar-track {
+  background: #F8F8F6;
+}
+
+[data-theme-mode="light"]::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+}
+
+[data-theme-mode="light"]::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* Shimmer animation for skeleton components */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }

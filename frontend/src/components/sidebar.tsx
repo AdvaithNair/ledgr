@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useTheme, type ThemeStyle, type ThemeMode } from "@/components/theme-provider";
 
 const navItems = [
   {
@@ -59,40 +60,75 @@ const navItems = [
   },
 ];
 
-const designTrials = [
-  { id: 1, label: "Zen Flow" },
-  { id: 2, label: "Command Deck" },
-  { id: 3, label: "Daily Journal" },
-  { id: 4, label: "Mosaic" },
-  { id: 5, label: "Pulse" },
+const THEME_CYCLE: { style: ThemeStyle; mode: ThemeMode }[] = [
+  { style: "arctic", mode: "dark" },
+  { style: "arctic", mode: "light" },
+  { style: "paper", mode: "dark" },
+  { style: "paper", mode: "light" },
 ];
+
+function getThemeLabel(style: ThemeStyle, mode: ThemeMode): string {
+  const styleName = style === "arctic" ? "Arctic" : "Paper";
+  const modeName = mode === "dark" ? "Dark" : "Light";
+  return `${styleName} ${modeName}`;
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [labOpen, setLabOpen] = useState(false);
+  const { theme, style, mode, setStyle, setMode } = useTheme();
 
   function isActive(item: (typeof navItems)[0]) {
     if (item.matchPaths) return item.matchPaths.some((p) => pathname === p);
     return pathname === item.href;
   }
 
+  function cycleTheme() {
+    const currentIndex = THEME_CYCLE.findIndex(
+      (t) => t.style === style && t.mode === mode
+    );
+    const next = THEME_CYCLE[(currentIndex + 1) % THEME_CYCLE.length];
+    setStyle(next.style);
+    setMode(next.mode);
+  }
+
   return (
     <motion.aside
       animate={{ width: collapsed ? 64 : 240 }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
-      className="flex h-screen flex-col border-r border-border bg-surface"
+      className="flex h-screen flex-col overflow-hidden"
+      style={{
+        backgroundColor: theme.bg,
+        borderRight: `1px solid ${theme.border}`,
+        fontFamily: theme.bodyFont,
+      }}
     >
-      {/* Logo */}
+      {/* Logo + collapse toggle */}
       <div className="flex h-14 items-center justify-between px-4">
-        {!collapsed && (
-          <Link href="/" className="font-mono text-lg font-bold text-white">
-            Ledgr
-          </Link>
-        )}
+        <AnimatePresence>
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <Link
+                href="/"
+                className="text-lg font-bold"
+                style={{ color: theme.text, fontFamily: theme.displayFont }}
+              >
+                Ledgr
+              </Link>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="rounded p-1 text-white/40 transition-colors hover:bg-white/5 hover:text-white"
+          className="rounded p-1 transition-colors"
+          style={{ color: theme.textMuted }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = theme.text)}
+          onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           <svg
@@ -121,76 +157,89 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                active
-                  ? "border-l-2 border-white bg-white/5 text-white"
-                  : "text-white/50 hover:bg-white/5 hover:text-white"
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
               )}
+              style={{
+                backgroundColor: active ? theme.accentMuted : "transparent",
+                color: active ? theme.accent : theme.textMuted,
+              }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  e.currentTarget.style.color = theme.text;
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  e.currentTarget.style.color = theme.textMuted;
+                }
+              }}
               title={collapsed ? item.label : undefined}
             >
               <span className="flex-shrink-0">{item.icon}</span>
-              {!collapsed && <span>{item.label}</span>}
-            </Link>
-          );
-        })}
-
-        {/* Divider */}
-        <div className="my-3 border-t border-border" />
-
-        {/* Lab — Experimental Layouts */}
-        {!collapsed && (
-          <button
-            onClick={() => setLabOpen(!labOpen)}
-            className="flex w-full items-center justify-between px-3 pb-1 text-[10px] uppercase tracking-wider text-white/30 hover:text-white/50 transition-colors"
-          >
-            <span>Lab</span>
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              className={cn("transition-transform duration-200", labOpen && "rotate-180")}
-            >
-              <path d="M2 4l3 3 3-3" />
-            </svg>
-          </button>
-        )}
-        {(labOpen || collapsed) && designTrials.map((trial) => {
-          const active = pathname === `/${trial.id}`;
-          return (
-            <Link
-              key={trial.id}
-              href={`/${trial.id}`}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",
-                active
-                  ? "bg-white/10 text-white"
-                  : "text-white/40 hover:bg-white/5 hover:text-white/70"
-              )}
-              title={collapsed ? trial.label : undefined}
-            >
-              <span className="flex-shrink-0 font-mono text-xs">{trial.id}</span>
-              {!collapsed && (
-                <span className="truncate text-xs">{trial.label}</span>
-              )}
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.span
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="whitespace-nowrap"
+                  >
+                    {item.label}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </Link>
           );
         })}
       </nav>
 
-      {/* Bottom */}
-      <div className="border-t border-border p-3">
+      {/* Bottom — theme indicator + cycle */}
+      <div
+        className="p-3"
+        style={{ borderTop: `1px solid ${theme.border}` }}
+      >
         {collapsed ? (
-          <div className="flex justify-center">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" title="Local only" />
+          <div className="flex flex-col items-center gap-2">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: theme.accent }}
+            />
+            <button
+              onClick={cycleTheme}
+              className="rounded p-1 transition-colors"
+              style={{ color: theme.textMuted }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = theme.text)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
+              title="Cycle theme"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M1 8a7 7 0 0 1 13-3.5M15 8a7 7 0 0 1-13 3.5" />
+                <path d="M14 1v3.5h-3.5M2 15v-3.5h3.5" />
+              </svg>
+            </button>
           </div>
         ) : (
-          <p className="text-[10px] text-white/30">
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Local only
-          </p>
+          <button
+            onClick={cycleTheme}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors"
+            style={{ color: theme.textMuted }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = theme.text)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
+            title="Cycle theme"
+          >
+            <span
+              className="h-2 w-2 flex-shrink-0 rounded-full"
+              style={{ backgroundColor: theme.accent }}
+            />
+            <span className="flex-1 text-left whitespace-nowrap">
+              {getThemeLabel(style, mode)}
+            </span>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M1 8a7 7 0 0 1 13-3.5M15 8a7 7 0 0 1-13 3.5" />
+              <path d="M14 1v3.5h-3.5M2 15v-3.5h3.5" />
+            </svg>
+          </button>
         )}
       </div>
     </motion.aside>

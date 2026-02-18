@@ -26,6 +26,7 @@ pub struct NewTransaction {
     pub card_label: String,
     pub raw_data: Option<serde_json::Value>,
     pub hash: String,
+    pub merchant_normalized: String,
 }
 
 #[derive(Debug, Deserialize)]

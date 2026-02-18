@@ -11,6 +11,7 @@ import {
   Fraunces,
   Source_Serif_4,
 } from "next/font/google";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Sidebar } from "@/components/sidebar";
 import "./globals.css";
 
@@ -26,7 +27,6 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
-// Design 2: Warm Ledger
 const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
   weight: ["600", "700"],
@@ -40,7 +40,6 @@ const libreBaskerville = Libre_Baskerville({
   display: "swap",
 });
 
-// Design 3: Arctic Glass
 const outfit = Outfit({
   subsets: ["latin"],
   weight: ["400", "700"],
@@ -54,7 +53,6 @@ const dmSans = DM_Sans({
   display: "swap",
 });
 
-// Design 4: Neon Dusk
 const syne = Syne({
   subsets: ["latin"],
   weight: ["700"],
@@ -68,7 +66,6 @@ const lexend = Lexend({
   display: "swap",
 });
 
-// Design 5: Paper Light
 const fraunces = Fraunces({
   subsets: ["latin"],
   weight: ["700"],
@@ -93,14 +90,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} ${cormorant.variable} ${libreBaskerville.variable} ${outfit.variable} ${dmSans.variable} ${syne.variable} ${lexend.variable} ${fraunces.variable} ${sourceSerif.variable} bg-bg text-white antialiased`}
+        className={`${inter.variable} ${jetbrainsMono.variable} ${cormorant.variable} ${libreBaskerville.variable} ${outfit.variable} ${dmSans.variable} ${syne.variable} ${lexend.variable} ${fraunces.variable} ${sourceSerif.variable} antialiased`}
       >
-        <div className="flex h-screen">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto p-8">{children}</main>
-        </div>
+        <ThemeProvider>
+          <div className="flex h-screen">
+            <Sidebar />
+            <main className="flex-1 overflow-y-auto">{children}</main>
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );

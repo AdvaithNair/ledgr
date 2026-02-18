@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::models::card::Card;
 use crate::models::transaction::NewTransaction;
+use crate::services::merchant_normalizer;
 
 pub struct ParseResult {
     pub transactions: Vec<NewTransaction>,
@@ -150,6 +151,7 @@ pub fn parse_csv(data: &str, card: &Card, user_name: Option<&str>) -> Result<Par
         };
 
         let hash = compute_hash(&date.to_string(), &description, amount, &card.code);
+        let merchant_normalized = merchant_normalizer::normalize_merchant(&description);
 
         transactions.push(NewTransaction {
             date,
@@ -160,6 +162,7 @@ pub fn parse_csv(data: &str, card: &Card, user_name: Option<&str>) -> Result<Par
             card_label: card.label.clone(),
             raw_data: Some(raw_data),
             hash,
+            merchant_normalized,
         });
     }
 
@@ -375,4 +378,123 @@ fn categorize(description: &str) -> String {
     }
 
     "Uncategorized".into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_auto_detect_delimiter_csv() {
+        assert_eq!(auto_detect_delimiter("a,b,c\n1,2,3"), b',');
+    }
+
+    #[test]
+    fn test_auto_detect_delimiter_tsv() {
+        assert_eq!(auto_detect_delimiter("a\tb\tc\n1\t2\t3"), b'\t');
+    }
+
+    #[test]
+    fn test_parse_date_us_format() {
+        let d = parse_date("01/15/26", "MM/DD/YY").unwrap();
+        assert_eq!(d.to_string(), "2026-01-15");
+    }
+
+    #[test]
+    fn test_parse_date_iso_format() {
+        let d = parse_date("2026-01-15", "YYYY-MM-DD").unwrap();
+        assert_eq!(d.to_string(), "2026-01-15");
+    }
+
+    #[test]
+    fn test_parse_date_us_four_digit_year() {
+        let d = parse_date("01/15/2026", "MM/DD/YYYY").unwrap();
+        assert_eq!(d.to_string(), "2026-01-15");
+    }
+
+    #[test]
+    fn test_parse_date_invalid() {
+        assert!(parse_date("not-a-date", "MM/DD/YY").is_err());
+    }
+
+    #[test]
+    fn test_find_column_case_insensitive() {
+        let headers = vec!["Date".to_string(), "Description".to_string(), "Amount".to_string()];
+        assert_eq!(find_column(&headers, Some("date")), Some(0));
+        assert_eq!(find_column(&headers, Some("DESCRIPTION")), Some(1));
+        assert_eq!(find_column(&headers, None), None);
+        assert_eq!(find_column(&headers, Some("missing")), None);
+    }
+
+    #[test]
+    fn test_compute_hash_deterministic() {
+        let h1 = compute_hash("2026-01-15", "STARBUCKS", 5.75, "amex");
+        let h2 = compute_hash("2026-01-15", "STARBUCKS", 5.75, "amex");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_compute_hash_different_inputs() {
+        let h1 = compute_hash("2026-01-15", "STARBUCKS", 5.75, "amex");
+        let h2 = compute_hash("2026-01-16", "STARBUCKS", 5.75, "amex");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_fuzzy_name_match_exact() {
+        assert!(fuzzy_name_match("John Doe", "John Doe"));
+    }
+
+    #[test]
+    fn test_fuzzy_name_match_containment() {
+        assert!(fuzzy_name_match("John", "John Doe"));
+        assert!(fuzzy_name_match("John Doe", "John"));
+    }
+
+    #[test]
+    fn test_fuzzy_name_match_lastname_first() {
+        assert!(fuzzy_name_match("John Doe", "DOE, JOHN"));
+    }
+
+    #[test]
+    fn test_fuzzy_name_match_no_match() {
+        assert!(!fuzzy_name_match("John Doe", "Jane Smith"));
+    }
+
+    #[test]
+    fn test_fuzzy_name_match_empty() {
+        assert!(!fuzzy_name_match("", "John"));
+        assert!(!fuzzy_name_match("John", ""));
+    }
+
+    #[test]
+    fn test_categorize_dining() {
+        assert_eq!(categorize("STARBUCKS COFFEE"), "Dining");
+        assert_eq!(categorize("MCDONALD'S"), "Dining");
+        assert_eq!(categorize("CHIPOTLE"), "Dining");
+    }
+
+    #[test]
+    fn test_categorize_groceries() {
+        assert_eq!(categorize("COSTCO WHOLESALE"), "Groceries");
+        assert_eq!(categorize("WHOLE FOODS MARKET"), "Groceries");
+        assert_eq!(categorize("TRADER JOE'S"), "Groceries");
+    }
+
+    #[test]
+    fn test_categorize_uncategorized() {
+        assert_eq!(categorize("RANDOM MERCHANT XYZ"), "Uncategorized");
+    }
+
+    #[test]
+    fn test_map_csv_category_known() {
+        assert_eq!(map_csv_category("Restaurant-Bar & Café"), "Dining");
+        assert_eq!(map_csv_category("Merchandise & Supplies-Groceries"), "Groceries");
+        assert_eq!(map_csv_category("Transportation-Fuel"), "Gas");
+    }
+
+    #[test]
+    fn test_map_csv_category_passthrough() {
+        assert_eq!(map_csv_category("Custom Category"), "Custom Category");
+    }
 }

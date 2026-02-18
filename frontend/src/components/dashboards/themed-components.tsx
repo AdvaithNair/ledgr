@@ -308,3 +308,90 @@ export function useChartGradientId(prefix: string) {
   const { style, mode } = useTheme();
   return `${prefix}-${style}-${mode}`;
 }
+
+// ── ThemedTable ── styled table wrapper with CSS variable theming
+export function ThemedTable({ children, className }: { children: ReactNode; className?: string }) {
+  const { theme } = useTheme();
+  return (
+    <div
+      className={cn("w-full overflow-x-auto", className)}
+      style={{
+        '--table-text': theme.text,
+        '--table-muted': theme.textMuted,
+        '--table-border': theme.border,
+        '--table-label': theme.labelColor,
+        '--table-hover': theme.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+        '--table-font': theme.bodyFont,
+      } as React.CSSProperties}
+    >
+      <table className="w-full" style={{ fontFamily: theme.bodyFont, color: theme.text }}>
+        {children}
+      </table>
+    </div>
+  );
+}
+
+export function ThemedTh({ children, className, numeric }: { children: ReactNode; className?: string; numeric?: boolean }) {
+  const { theme } = useTheme();
+  return (
+    <th
+      className={cn("pb-3 text-left text-[10px] uppercase tracking-widest font-normal", numeric && "text-right", className)}
+      style={{ color: theme.labelColor, fontFamily: theme.bodyFont }}
+    >
+      {children}
+    </th>
+  );
+}
+
+export function ThemedTd({ children, className, numeric }: { children: ReactNode; className?: string; numeric?: boolean }) {
+  const { theme } = useTheme();
+  return (
+    <td
+      className={cn("py-3 text-[13px]", numeric && "text-right font-mono tabular-nums", className)}
+      style={{ color: theme.text, fontFamily: numeric ? undefined : theme.bodyFont }}
+    >
+      {children}
+    </td>
+  );
+}
+
+export function ThemedTr({ children, className }: { children: ReactNode; className?: string }) {
+  const { theme } = useTheme();
+  return (
+    <tr
+      className={cn("transition-colors duration-150", className)}
+      style={{ borderBottom: `1px solid ${theme.border}` }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = theme.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+    >
+      {children}
+    </tr>
+  );
+}
+
+// ── ThemedStat ── compact stat display with optional trend indicator
+export function ThemedStat({ label, value, subValue, trend, className }: {
+  label: string;
+  value: string;
+  subValue?: string;
+  trend?: 'up' | 'down' | 'neutral';
+  className?: string;
+}) {
+  const { theme } = useTheme();
+  const trendColor = trend === 'up' ? theme.danger : trend === 'down' ? theme.success : theme.textMuted;
+  return (
+    <div className={className}>
+      <p className="text-[10px] uppercase tracking-widest" style={{ color: theme.labelColor, fontFamily: theme.bodyFont }}>
+        {label}
+      </p>
+      <p className="mt-1 font-mono text-2xl font-semibold tabular-nums" style={{ color: theme.text }}>
+        {value}
+      </p>
+      {subValue && (
+        <p className="mt-0.5 text-xs" style={{ color: trendColor, fontFamily: theme.bodyFont }}>
+          {subValue}
+        </p>
+      )}
+    </div>
+  );
+}

@@ -1,12 +1,8 @@
-mod config;
-mod db;
-mod models;
-mod routes;
-mod services;
+use ledgr_backend::{db, routes};
 
 use axum::{routing::get, Router};
 use tower_http::classify::StatusInRangeAsFailures;
-use tower_http::cors::{CorsLayer, Any};
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
