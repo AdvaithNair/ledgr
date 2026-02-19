@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import Papa from "papaparse";
 import { useTheme } from "@/components/theme-provider";
 import type { ThemeConfig } from "@/components/theme-provider";
 import { PageShell } from "@/components/page-shell";
@@ -13,11 +15,19 @@ import {
   ThemedTd,
 } from "@/components/dashboards/themed-components";
 import { ThemedButton } from "@/components/ui/themed-button";
-import { ThemedSelect } from "@/components/ui/themed-input";
-import { getCards, importCSV, getImportHistory } from "@/lib/api";
+import { ThemedInput, ThemedSelect } from "@/components/ui/themed-input";
+import {
+  getCards,
+  importCSV,
+  getImportHistory,
+  getConfig,
+  updateConfig,
+} from "@/lib/api";
 import { getCardColor, getCardLabel } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import type { Card, ImportResult, ImportRecord } from "@/types";
+import type { Card, ImportResult, ImportRecord, UserConfig } from "@/types";
+
+type ImportState = "idle" | "previewing" | "uploading" | "done";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -25,13 +35,26 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function detectCardFromHeaders(headers: string[], cards: Card[]): Card | null {
+  const joined = headers.join(",").toLowerCase();
+  for (const card of cards) {
+    if (!card.header_pattern) continue;
+    const keywords = card.header_pattern
+      .split(",")
+      .map((k) => k.trim().toLowerCase());
+    if (keywords.every((kw) => joined.includes(kw))) return card;
+  }
+  return null;
+}
+
 export default function ImportPage() {
   const { theme } = useTheme();
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [state, setState] = useState<ImportState>("idle");
   const [file, setFile] = useState<File | null>(null);
   const [cardCode, setCardCode] = useState("");
-  const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cards, setCards] = useState<Card[]>([]);
@@ -39,11 +62,35 @@ export default function ImportPage() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [dragOver, setDragOver] = useState(false);
 
+  // CSV preview state
+  const [previewHeaders, setPreviewHeaders] = useState<string[]>([]);
+  const [previewRows, setPreviewRows] = useState<Record<string, string>[]>([]);
+  const [totalRowCount, setTotalRowCount] = useState(0);
+
+  // Auto-detect card state
+  const [detectedCard, setDetectedCard] = useState<Card | null>(null);
+  const [showCardDropdown, setShowCardDropdown] = useState(false);
+
+  // User name config
+  const [userName, setUserName] = useState<string | null>(null);
+  const [userNameInput, setUserNameInput] = useState("");
+  const [editingUserName, setEditingUserName] = useState(false);
+  const [savingUserName, setSavingUserName] = useState(false);
+  const [userNameDismissed, setUserNameDismissed] = useState(false);
+
   useEffect(() => {
     getCards()
       .then((res) => setCards(res.data))
       .catch(() => {});
     fetchHistory();
+    getConfig()
+      .then((res) => {
+        if (res.data.user_name) {
+          setUserName(res.data.user_name);
+          setUserNameInput(res.data.user_name);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const fetchHistory = async () => {
@@ -58,15 +105,55 @@ export default function ImportPage() {
     }
   };
 
-  const handleFile = useCallback((f: File) => {
-    if (!f.name.toLowerCase().endsWith(".csv")) {
-      setError("Only CSV files are supported.");
-      return;
-    }
-    setFile(f);
-    setError(null);
-    setResult(null);
-  }, []);
+  const handleFile = useCallback(
+    (f: File) => {
+      if (!f.name.toLowerCase().endsWith(".csv")) {
+        setError("Only CSV files are supported.");
+        return;
+      }
+      setFile(f);
+      setError(null);
+      setResult(null);
+
+      // Parse CSV for preview
+      Papa.parse<Record<string, string>>(f, {
+        header: true,
+        preview: 21,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const headers = results.meta.fields || [];
+          setPreviewHeaders(headers);
+          setPreviewRows(results.data.slice(0, 20));
+
+          // Auto-detect card
+          const detected = detectCardFromHeaders(headers, cards);
+          setDetectedCard(detected);
+          if (detected) {
+            setCardCode(detected.code);
+            setShowCardDropdown(false);
+          } else {
+            setShowCardDropdown(true);
+            setCardCode("");
+          }
+
+          // Count total rows (re-parse without preview limit)
+          Papa.parse(f, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (fullResults) => {
+              setTotalRowCount(fullResults.data.length);
+            },
+          });
+
+          setState("previewing");
+        },
+        error: () => {
+          setError("Failed to parse CSV file.");
+        },
+      });
+    },
+    [cards]
+  );
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -99,21 +186,29 @@ export default function ImportPage() {
     [handleFile]
   );
 
-  const removeFile = useCallback(() => {
+  const resetAll = useCallback(() => {
     setFile(null);
     setError(null);
     setResult(null);
+    setPreviewHeaders([]);
+    setPreviewRows([]);
+    setTotalRowCount(0);
+    setDetectedCard(null);
+    setShowCardDropdown(false);
+    setCardCode("");
+    setState("idle");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
   const handleImport = async () => {
     if (!file) return;
-    setImporting(true);
+    setState("uploading");
     setError(null);
     setResult(null);
     try {
       const res = await importCSV(file, cardCode || undefined);
       setResult(res.data);
+      setState("done");
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       fetchHistory();
@@ -121,10 +216,28 @@ export default function ImportPage() {
       setError(
         err instanceof Error ? err.message : "Import failed. Please try again."
       );
-    } finally {
-      setImporting(false);
+      setState("previewing");
     }
   };
+
+  const handleSaveUserName = async () => {
+    if (!userNameInput.trim()) return;
+    setSavingUserName(true);
+    try {
+      await updateConfig({ user_name: userNameInput.trim() });
+      setUserName(userNameInput.trim());
+      setEditingUserName(false);
+    } catch {
+      // silent
+    } finally {
+      setSavingUserName(false);
+    }
+  };
+
+  const isAllDuplicates =
+    result &&
+    result.new_count === 0 &&
+    result.duplicate_count > 0;
 
   return (
     <PageShell
@@ -132,44 +245,196 @@ export default function ImportPage() {
       description="Drop a CSV to add transactions"
       maxWidth="lg"
     >
-      {/* ── Drop Zone ── */}
-      <motion.div
-        animate={dragOver ? { scale: 1.01 } : { scale: 1 }}
-        transition={{ type: "spring", stiffness: 400, damping: 25 }}
-      >
-        <ThemedPanel style={{ padding: theme.panelPadding }}>
-          <div
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
-            onClick={() => !file && fileInputRef.current?.click()}
-            style={{
-              border: dragOver
-                ? `2px solid ${theme.accent}`
-                : `2px dashed ${theme.border}`,
-              borderRadius: "12px",
-              padding: "48px 24px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: file ? "default" : "pointer",
-              backgroundColor: dragOver
-                ? `color-mix(in srgb, ${theme.accent} 3%, transparent)`
-                : "transparent",
-              transition: "border-color 200ms, background-color 200ms",
-            }}
+      {/* ── User Name Config Banner ── */}
+      <AnimatePresence>
+        {!userNameDismissed && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{ marginBottom: "16px", overflow: "hidden" }}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={onFileInputChange}
-              style={{ display: "none" }}
-            />
+            {!userName || editingUserName ? (
+              <ThemedPanel
+                style={{
+                  padding: "16px 20px",
+                  borderLeft: `3px solid ${theme.accent}`,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ flex: "1 1 auto", minWidth: "200px" }}>
+                    <p
+                      style={{
+                        fontFamily: theme.bodyFont,
+                        fontSize: "13px",
+                        color: theme.text,
+                        marginBottom: "8px",
+                      }}
+                    >
+                      {userName
+                        ? "Update your name"
+                        : "Set your name to filter out other cardholders\u2019 transactions"}
+                    </p>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <ThemedInput
+                        value={userNameInput}
+                        onChange={(e) => setUserNameInput(e.target.value)}
+                        placeholder="Your name"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveUserName();
+                          if (e.key === "Escape") {
+                            setEditingUserName(false);
+                            setUserNameInput(userName || "");
+                          }
+                        }}
+                        style={{ maxWidth: "220px" }}
+                      />
+                      <ThemedButton
+                        variant="primary"
+                        size="sm"
+                        loading={savingUserName}
+                        onClick={handleSaveUserName}
+                      >
+                        Save
+                      </ThemedButton>
+                      {userName && (
+                        <ThemedButton
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingUserName(false);
+                            setUserNameInput(userName);
+                          }}
+                        >
+                          Cancel
+                        </ThemedButton>
+                      )}
+                    </div>
+                  </div>
+                  {!userName && (
+                    <button
+                      onClick={() => setUserNameDismissed(true)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: theme.textMuted,
+                        padding: "4px",
+                        fontSize: "16px",
+                        lineHeight: 1,
+                      }}
+                      aria-label="Dismiss"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+              </ThemedPanel>
+            ) : (
+              <ThemedPanel style={{ padding: "12px 20px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={theme.accent}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span
+                    style={{
+                      fontFamily: theme.bodyFont,
+                      fontSize: "13px",
+                      color: theme.textMuted,
+                    }}
+                  >
+                    Filtering for:{" "}
+                    <span style={{ color: theme.text, fontWeight: 500 }}>
+                      {userName}
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => setEditingUserName(true)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontFamily: theme.bodyFont,
+                      fontSize: "12px",
+                      color: theme.accent,
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              </ThemedPanel>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {!file ? (
-              <>
+      {/* ── Drop Zone (only visible when idle) ── */}
+      <AnimatePresence mode="wait">
+        {state === "idle" && (
+          <motion.div
+            key="dropzone"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0, scale: dragOver ? 1.01 : 1 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+          >
+            <ThemedPanel style={{ padding: theme.panelPadding }}>
+              <div
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  border: dragOver
+                    ? `2px solid ${theme.accent}`
+                    : `2px dashed ${theme.border}`,
+                  borderRadius: "12px",
+                  padding: "48px 24px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  backgroundColor: dragOver
+                    ? `color-mix(in srgb, ${theme.accent} 3%, transparent)`
+                    : "transparent",
+                  transition: "border-color 200ms, background-color 200ms",
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={onFileInputChange}
+                  style={{ display: "none" }}
+                />
                 <svg
                   width="40"
                   height="40"
@@ -205,103 +470,357 @@ export default function ImportPage() {
                 >
                   or click to browse
                 </p>
-              </>
-            ) : (
+              </div>
+            </ThemedPanel>
+          </motion.div>
+        )}
+
+        {/* ── Preview State ── */}
+        {state === "previewing" && file && (
+          <motion.div
+            key="preview"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
+          >
+            <ThemedPanel style={{ padding: theme.panelPadding }}>
+              {/* File info header */}
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "12px",
-                  width: "100%",
-                  maxWidth: "400px",
+                  justifyContent: "space-between",
+                  marginBottom: "16px",
+                  flexWrap: "wrap",
+                  gap: "8px",
                 }}
               >
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={theme.accent}
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ flexShrink: 0 }}
-                >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    style={{
-                      fontFamily: theme.bodyFont,
-                      fontSize: "14px",
-                      color: theme.text,
-                      fontWeight: 500,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {file.name}
-                  </p>
-                  <p
-                    style={{
-                      fontFamily: theme.bodyFont,
-                      fontSize: "12px",
-                      color: theme.textMuted,
-                      marginTop: "2px",
-                    }}
-                  >
-                    {formatFileSize(file.size)}
-                  </p>
-                </div>
-                <ThemedButton
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeFile();
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
                   }}
                 >
-                  Remove
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={theme.accent}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <div>
+                    <p
+                      style={{
+                        fontFamily: theme.bodyFont,
+                        fontSize: "14px",
+                        color: theme.text,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {file.name}
+                    </p>
+                    <p
+                      style={{
+                        fontFamily: theme.bodyFont,
+                        fontSize: "12px",
+                        color: theme.textMuted,
+                        marginTop: "1px",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {totalRowCount.toLocaleString()} rows &middot;{" "}
+                      {formatFileSize(file.size)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card detection */}
+              <div
+                style={{
+                  marginBottom: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}
+              >
+                {detectedCard && !showCardDropdown ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "10px",
+                        height: "10px",
+                        borderRadius: "50%",
+                        backgroundColor: detectedCard.color,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontFamily: theme.bodyFont,
+                        fontSize: "13px",
+                        color: theme.text,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {detectedCard.label}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: theme.bodyFont,
+                        fontSize: "11px",
+                        color: theme.textMuted,
+                        backgroundColor:
+                          theme.mode === "dark"
+                            ? "rgba(255,255,255,0.06)"
+                            : "rgba(0,0,0,0.05)",
+                        padding: "2px 8px",
+                        borderRadius: "10px",
+                      }}
+                    >
+                      auto-detected
+                    </span>
+                    <button
+                      onClick={() => setShowCardDropdown(true)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontFamily: theme.bodyFont,
+                        fontSize: "12px",
+                        color: theme.accent,
+                        padding: "2px 4px",
+                      }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      flex: 1,
+                    }}
+                  >
+                    {!detectedCard && (
+                      <span
+                        style={{
+                          fontFamily: theme.bodyFont,
+                          fontSize: "12px",
+                          color: theme.textMuted,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Could not auto-detect card type
+                      </span>
+                    )}
+                    <ThemedSelect
+                      value={cardCode}
+                      onChange={(e) => setCardCode(e.target.value)}
+                      style={{ maxWidth: "220px" }}
+                    >
+                      <option value="">Select card...</option>
+                      {cards.map((card) => (
+                        <option key={card.id} value={card.code}>
+                          {card.label}
+                        </option>
+                      ))}
+                    </ThemedSelect>
+                    {detectedCard && (
+                      <button
+                        onClick={() => {
+                          setShowCardDropdown(false);
+                          setCardCode(detectedCard.code);
+                        }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          fontFamily: theme.bodyFont,
+                          fontSize: "12px",
+                          color: theme.textMuted,
+                        }}
+                      >
+                        Use detected
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Preview table */}
+              <div
+                style={{
+                  overflowX: "auto",
+                  borderRadius: "8px",
+                  border: `1px solid ${theme.border}`,
+                }}
+              >
+                <ThemedTable>
+                  <thead>
+                    <tr>
+                      {previewHeaders.map((header) => (
+                        <th
+                          key={header}
+                          style={{
+                            fontSize: "11px",
+                            whiteSpace: "nowrap",
+                            padding: "8px 12px",
+                            textAlign: "left",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontWeight: 400,
+                            color: theme.labelColor,
+                            fontFamily: theme.bodyFont,
+                          }}
+                        >
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <motion.tr
+                        key={i}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{
+                          duration: 0.2,
+                          delay: i * 0.02,
+                        }}
+                        style={{
+                          borderBottom: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        {previewHeaders.map((header) => {
+                          const value = row[header] ?? "";
+                          const isNumeric =
+                            value !== "" && !isNaN(Number(value.replace(/[,$]/g, "")));
+                          return (
+                            <td
+                              key={header}
+                              style={{
+                                fontSize: "12px",
+                                whiteSpace: "nowrap",
+                                padding: "6px 12px",
+                                maxWidth: "200px",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                textAlign: isNumeric ? "right" : "left",
+                                fontVariantNumeric: isNumeric
+                                  ? "tabular-nums"
+                                  : undefined,
+                                fontFamily: isNumeric
+                                  ? `"JetBrains Mono", ${theme.bodyFont}`
+                                  : theme.bodyFont,
+                                color: theme.text,
+                              }}
+                            >
+                              {value}
+                            </td>
+                          );
+                        })}
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </ThemedTable>
+              </div>
+              {totalRowCount > 20 && (
+                <p
+                  style={{
+                    fontFamily: theme.bodyFont,
+                    fontSize: "11px",
+                    color: theme.textMuted,
+                    marginTop: "8px",
+                    textAlign: "center",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  Showing 20 of {totalRowCount.toLocaleString()} rows
+                </p>
+              )}
+
+              {/* Action buttons */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  marginTop: "16px",
+                }}
+              >
+                <ThemedButton variant="ghost" onClick={resetAll}>
+                  Cancel
+                </ThemedButton>
+                <ThemedButton
+                  variant="primary"
+                  onClick={handleImport}
+                >
+                  Import
                 </ThemedButton>
               </div>
-            )}
-          </div>
+            </ThemedPanel>
+          </motion.div>
+        )}
 
-          {/* Card selector + Import button */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              marginTop: "16px",
-            }}
+        {/* ── Uploading state ── */}
+        {state === "uploading" && (
+          <motion.div
+            key="uploading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
           >
-            <div style={{ flex: 1 }}>
-              <ThemedSelect
-                value={cardCode}
-                onChange={(e) => setCardCode(e.target.value)}
-              >
-                <option value="">Auto-detect card</option>
-                {cards.map((card) => (
-                  <option key={card.id} value={card.code}>
-                    {card.label}
-                  </option>
-                ))}
-              </ThemedSelect>
-            </div>
-            <ThemedButton
-              variant="primary"
-              disabled={!file}
-              loading={importing}
-              onClick={handleImport}
+            <ThemedPanel
+              style={{
+                padding: "48px",
+                textAlign: "center" as const,
+              }}
             >
-              Import
-            </ThemedButton>
-          </div>
-        </ThemedPanel>
-      </motion.div>
+              <div
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  border: `2px solid ${theme.border}`,
+                  borderTopColor: theme.accent,
+                  borderRadius: "50%",
+                  animation: "importSpin 0.8s linear infinite",
+                  margin: "0 auto 16px",
+                }}
+              />
+              <p
+                style={{
+                  fontFamily: theme.bodyFont,
+                  fontSize: "14px",
+                  color: theme.textMuted,
+                }}
+              >
+                Importing transactions...
+              </p>
+              <style>{`@keyframes importSpin { to { transform: rotate(360deg); } }`}</style>
+            </ThemedPanel>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Result Card ── */}
       <AnimatePresence>
@@ -316,19 +835,21 @@ export default function ImportPage() {
             <ThemedPanel
               style={{
                 padding: theme.panelPadding,
-                borderLeft: `3px solid ${theme.success}`,
+                borderLeft: `3px solid ${isAllDuplicates ? theme.accent : theme.success}`,
               }}
             >
               <p
                 style={{
                   fontFamily: theme.bodyFont,
                   fontSize: "14px",
-                  color: theme.success,
+                  color: isAllDuplicates ? theme.accent : theme.success,
                   fontWeight: 500,
                   marginBottom: "16px",
                 }}
               >
-                Successfully imported to {result.card_label}
+                {isAllDuplicates
+                  ? "All transactions in this file were already imported"
+                  : `Successfully imported to ${result.card_label}`}
               </p>
               <div
                 style={{
@@ -357,6 +878,27 @@ export default function ImportPage() {
                   value={result.skipped_user_count}
                   theme={theme}
                 />
+              </div>
+
+              {/* Post-import action buttons */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  marginTop: "20px",
+                  paddingTop: "16px",
+                  borderTop: `1px solid ${theme.border}`,
+                }}
+              >
+                <ThemedButton variant="ghost" onClick={resetAll}>
+                  Import Another
+                </ThemedButton>
+                <ThemedButton
+                  variant="primary"
+                  onClick={() => router.push("/transactions")}
+                >
+                  View Transactions
+                </ThemedButton>
               </div>
             </ThemedPanel>
           </motion.div>
