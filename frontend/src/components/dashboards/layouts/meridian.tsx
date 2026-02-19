@@ -23,8 +23,33 @@ import {
 } from "@/components/dashboards/themed-components";
 import { formatCurrency } from "@/lib/utils";
 import { getCardColor, getCardLabel, CATEGORY_COLORS } from "@/lib/constants";
-import type { DashboardLayoutProps } from "./zen-flow";
-import type { BudgetProgress } from "@/types";
+import type {
+  EnhancedSummaryStats,
+  MonthlyData,
+  ForecastData,
+  CategoryAnomaly,
+  RecurringTransaction,
+  Insight,
+  HabitAnalysis,
+  DailySpending,
+  EnhancedMerchant,
+  Card,
+  BudgetProgress,
+} from "@/types";
+
+export interface DashboardLayoutProps {
+  summary: EnhancedSummaryStats;
+  monthly: MonthlyData | null;
+  forecast: ForecastData | null;
+  anomalies: CategoryAnomaly[];
+  recurring: RecurringTransaction[] | null;
+  insights: Insight[] | null;
+  habits: HabitAnalysis | null;
+  daily: DailySpending[] | null;
+  merchants: EnhancedMerchant[] | null;
+  cards: Card[];
+  budgetProgress?: BudgetProgress[];
+}
 
 // ── Icon map for insights ──
 const INSIGHT_ICONS: Record<string, string> = {
