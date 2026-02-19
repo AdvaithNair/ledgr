@@ -1,3 +1,4 @@
+pub mod budget;
 pub mod cards;
 pub mod config;
 pub mod import;
@@ -12,5 +13,6 @@ pub fn api_routes(pool: PgPool) -> Router {
         .merge(import::routes())
         .merge(cards::routes())
         .merge(config::routes())
+        .merge(budget::routes())
         .with_state(pool)
 }

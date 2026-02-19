@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
-import { motion, useInView } from "framer-motion";
+import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   Area,
   XAxis,
@@ -11,19 +11,30 @@ import {
   CartesianGrid,
   Line,
   ComposedChart,
+  Legend,
 } from "recharts";
 import { useTheme } from "@/components/theme-provider";
 import {
   ThemedBackground,
   ThemedPanel,
   ThemedLabel,
-  ThemedDivider,
   useTooltipStyle,
   useChartGradientId,
 } from "@/components/dashboards/themed-components";
 import { formatCurrency } from "@/lib/utils";
 import { getCardColor, getCardLabel, CATEGORY_COLORS } from "@/lib/constants";
 import type { DashboardLayoutProps } from "./zen-flow";
+import type { BudgetProgress } from "@/types";
+
+// ── Icon map for insights ──
+const INSIGHT_ICONS: Record<string, string> = {
+  "alert-triangle": "\u26A0",
+  "trending-up": "\u2197",
+  "trending-down": "\u2198",
+  "dollar-sign": "$",
+  repeat: "\u21BB",
+  "check-circle": "\u2713",
+};
 
 // ── Animated count-up hook ──
 function useCountUp(target: number, duration = 1400) {
@@ -38,11 +49,10 @@ function useCountUp(target: number, duration = 1400) {
     function tick(now: number) {
       const elapsed = now - start;
       const progress = Math.min(elapsed / duration, 1);
-      // Overdamped spring — fast rise, gentle settle
       const eased = 1 - Math.pow(1 - progress, 4);
       setValue(target * eased);
       if (progress < 1) raf = requestAnimationFrame(tick);
-      else setValue(target); // snap to exact
+      else setValue(target);
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
@@ -93,7 +103,46 @@ function ProportionBar({
         style={{ backgroundColor: color, opacity: 0.7 }}
         initial={{ width: 0 }}
         animate={inView ? { width: `${width}%` } : { width: 0 }}
-        transition={{ duration: 0.8, delay, ease: [0.22, 1, 0.36, 1] as const }}
+        transition={{
+          duration: 0.8,
+          delay,
+          ease: [0.22, 1, 0.36, 1] as const,
+        }}
+      />
+    </div>
+  );
+}
+
+// ── Animated progress bar (thicker, for velocity card) ──
+function ProgressBar({
+  pct,
+  color,
+  trackColor,
+  delay = 0,
+}: {
+  pct: number;
+  color: string;
+  trackColor: string;
+  delay?: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-40px" });
+  return (
+    <div
+      ref={ref}
+      className="h-[6px] overflow-hidden rounded-full"
+      style={{ backgroundColor: trackColor }}
+    >
+      <motion.div
+        className="h-full rounded-full"
+        style={{ backgroundColor: color }}
+        initial={{ width: 0 }}
+        animate={inView ? { width: `${Math.min(pct, 100)}%` } : { width: 0 }}
+        transition={{
+          duration: 1,
+          delay,
+          ease: [0.22, 1, 0.36, 1] as const,
+        }}
       />
     </div>
   );
@@ -108,6 +157,7 @@ export function Meridian({
   insights,
   merchants,
   cards,
+  budgetProgress,
 }: DashboardLayoutProps) {
   const { theme } = useTheme();
   const tooltipStyle = useTooltipStyle();
@@ -115,6 +165,9 @@ export function Meridian({
 
   const heroAmount = useCountUp(summary.this_month);
   const isPaper = theme.style === "paper";
+
+  // Dismiss state for anomaly banner
+  const [alertDismissed, setAlertDismissed] = useState(false);
 
   // Chart data with rolling average
   const chartData = useMemo(() => {
@@ -145,14 +198,16 @@ export function Meridian({
   }, [merchants]);
 
   // Highest severity anomaly for alert
-  const topAnomaly = useMemo(() => {
-    if (!anomalies.length) return null;
+  const sortedAnomalies = useMemo(() => {
+    if (!anomalies.length) return [];
     const severityOrder = { critical: 3, high: 2, elevated: 1 };
     return [...anomalies].sort(
       (a, b) =>
         (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0)
-    )[0];
+    );
   }, [anomalies]);
+
+  const topAnomaly = sortedAnomalies[0] ?? null;
 
   // Category forecast lookup for alert
   const categoryForecasts = useMemo(() => {
@@ -211,16 +266,6 @@ export function Meridian({
     return activeRecurring.reduce((s, r) => s + r.avg_amount, 0);
   }, [activeRecurring]);
 
-  // Top insight
-  const topInsight = useMemo(() => {
-    if (!insights?.length) return null;
-    const severityOrder = { high: 3, medium: 2, low: 1 };
-    return [...insights].sort(
-      (a, b) =>
-        (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0)
-    )[0];
-  }, [insights]);
-
   // ── Helpers ──
   function sentimentColor(value: number | null | undefined) {
     if (value == null) return theme.textMuted;
@@ -228,15 +273,21 @@ export function Meridian({
   }
 
   function trendArrow(dir: "up" | "down" | "flat") {
-    if (dir === "up") return "▲";
-    if (dir === "down") return "▼";
-    return "─";
+    if (dir === "up") return "\u25B2";
+    if (dir === "down") return "\u25BC";
+    return "\u2500";
   }
 
   function alertBorderColor(severity: string) {
     if (severity === "critical" || severity === "high") return theme.danger;
     if (severity === "elevated") return theme.accent;
     return theme.textMuted;
+  }
+
+  function insightSeverityColor(severity: string) {
+    if (severity === "high") return theme.danger;
+    if (severity === "medium") return theme.accent;
+    return theme.success;
   }
 
   // Staggered scroll reveal
@@ -247,9 +298,150 @@ export function Meridian({
     transition: { duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] as const },
   });
 
+  // Velocity card color logic
+  const velocityBarColor = useMemo(() => {
+    if (!forecast) return theme.success;
+    const changePct = forecast.vs_average.projected_change_pct;
+    if (changePct > 10) return theme.danger;
+    if (changePct > 0) return theme.accent;
+    return theme.success;
+  }, [forecast, theme]);
+
   return (
     <ThemedBackground>
       <div className="mx-auto max-w-4xl px-6 pb-32">
+        {/* ════════════════════════════════════════════════════════
+            ANOMALY ALERT BANNER — Dismissible, at the top
+            ════════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {topAnomaly && !alertDismissed && (
+            <motion.div
+              initial={{ opacity: 0, y: -16, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto" }}
+              exit={{ opacity: 0, y: -16, height: 0 }}
+              transition={{
+                duration: 0.4,
+                ease: [0.22, 1, 0.36, 1] as const,
+              }}
+              className="overflow-hidden pt-6"
+            >
+              <div
+                className="relative overflow-hidden rounded-2xl p-4"
+                style={{
+                  backgroundColor:
+                    theme.mode === "dark"
+                      ? `color-mix(in srgb, ${alertBorderColor(topAnomaly.severity)} 4%, ${theme.surface})`
+                      : `color-mix(in srgb, ${alertBorderColor(topAnomaly.severity)} 3%, ${theme.surface})`,
+                  border: `1px solid ${theme.mode === "dark" ? "rgba(255,255,255,0.06)" : theme.border}`,
+                  boxShadow: theme.cardShadow,
+                }}
+              >
+                {/* Accent stripe */}
+                <div
+                  className="absolute top-0 left-0 h-full w-[3px]"
+                  style={{
+                    backgroundColor: alertBorderColor(topAnomaly.severity),
+                  }}
+                />
+                <div className="flex items-center justify-between pl-3">
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className="text-[13px] leading-relaxed"
+                      style={{
+                        fontFamily: theme.bodyFont,
+                        color: theme.text,
+                        lineHeight: theme.bodyLineHeight,
+                      }}
+                    >
+                      {topAnomaly.category} is running{" "}
+                      <span
+                        className="font-mono font-medium"
+                        style={{ color: theme.danger }}
+                      >
+                        {Math.round(topAnomaly.pct_above_avg)}%
+                      </span>{" "}
+                      above your average this month.
+                      {categoryForecasts.has(topAnomaly.category) && (
+                        <>
+                          {" "}
+                          At this pace, you&apos;ll hit{" "}
+                          <span
+                            className="font-mono font-medium"
+                            style={{ color: theme.danger }}
+                          >
+                            {formatCurrency(
+                              categoryForecasts.get(topAnomaly.category)!
+                            )}
+                          </span>{" "}
+                          by end of month
+                          {topAnomaly.avg_monthly > 0 && (
+                            <>
+                              {" \u2014 "}
+                              <span className="font-mono">
+                                {formatCurrency(
+                                  categoryForecasts.get(
+                                    topAnomaly.category
+                                  )! - topAnomaly.avg_monthly
+                                )}
+                              </span>{" "}
+                              more than typical
+                            </>
+                          )}
+                          .
+                        </>
+                      )}
+                    </p>
+                    {sortedAnomalies.length > 1 && (
+                      <p
+                        className="mt-1 text-[11px]"
+                        style={{
+                          color: theme.textMuted,
+                          fontFamily: theme.bodyFont,
+                        }}
+                      >
+                        and {sortedAnomalies.length - 1} more unusual pattern
+                        {sortedAnomalies.length > 2 ? "s" : ""}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setAlertDismissed(true)}
+                    className="ml-4 flex-shrink-0 rounded-lg p-1.5 transition-colors"
+                    style={{
+                      color: theme.textMuted,
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.color = theme.text;
+                      (e.currentTarget as HTMLElement).style.backgroundColor =
+                        theme.mode === "dark"
+                          ? "rgba(255,255,255,0.06)"
+                          : "rgba(0,0,0,0.04)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.color =
+                        theme.textMuted;
+                      (e.currentTarget as HTMLElement).style.backgroundColor =
+                        "transparent";
+                    }}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 14 14"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    >
+                      <path d="M3 3l8 8M11 3l-8 8" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ════════════════════════════════════════════════════════
             HERO — The one number that matters
             ════════════════════════════════════════════════════════ */}
@@ -338,7 +530,7 @@ export function Meridian({
               >
                 {summary.mom_change_pct != null
                   ? `${summary.mom_change_pct > 0 ? "+" : ""}${Math.round(summary.mom_change_pct)}%`
-                  : "─"}
+                  : "\u2500"}
               </span>
             </motion.div>
 
@@ -375,7 +567,7 @@ export function Meridian({
               >
                 {summary.vs_avg_pct != null
                   ? `${summary.vs_avg_pct > 0 ? "+" : ""}${Math.round(summary.vs_avg_pct)}%`
-                  : "─"}
+                  : "\u2500"}
               </span>
             </motion.div>
 
@@ -422,7 +614,7 @@ export function Meridian({
             )}
           </motion.div>
 
-          {/* Scroll indicator — three dots pulsing in sequence */}
+          {/* Scroll indicator */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -449,12 +641,347 @@ export function Meridian({
         </div>
 
         {/* ════════════════════════════════════════════════════════
+            INSIGHTS CAROUSEL — Horizontal scrollable insight cards
+            ════════════════════════════════════════════════════════ */}
+        {insights && insights.length > 0 && (
+          <motion.div {...sectionReveal()} className="mt-2 mb-2">
+            <div
+              className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide"
+              style={{
+                scrollSnapType: "x mandatory",
+                scrollBehavior: "smooth",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              {insights.map((insight, i) => (
+                <motion.div
+                  key={`${insight.type}-${insight.title}`}
+                  initial={{ opacity: 0, y: 12 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{
+                    duration: 0.4,
+                    delay: i * 0.08,
+                    ease: [0.22, 1, 0.36, 1] as const,
+                  }}
+                  className="relative flex-shrink-0 overflow-hidden rounded-xl"
+                  style={{
+                    width: 272,
+                    scrollSnapAlign: "start",
+                    backgroundColor:
+                      theme.mode === "dark"
+                        ? "rgba(255,255,255,0.03)"
+                        : "rgba(255,255,255,0.7)",
+                    border: `1px solid ${theme.mode === "dark" ? "rgba(255,255,255,0.06)" : theme.border}`,
+                    backdropFilter:
+                      theme.mode === "dark" ? "blur(8px)" : "none",
+                    boxShadow: theme.cardShadow,
+                  }}
+                >
+                  {/* Left accent bar */}
+                  <div
+                    className="absolute top-0 left-0 h-full w-[2px]"
+                    style={{
+                      backgroundColor: insightSeverityColor(insight.severity),
+                    }}
+                  />
+                  <div className="flex items-start gap-3 p-4 pl-5">
+                    <span
+                      className="mt-0.5 flex-shrink-0 text-base"
+                      style={{ opacity: 0.7 }}
+                    >
+                      {INSIGHT_ICONS[insight.icon] ?? "\u2022"}
+                    </span>
+                    <div className="min-w-0">
+                      <h3
+                        className="truncate text-[13px] font-medium"
+                        style={{
+                          color: theme.text,
+                          fontFamily: theme.bodyFont,
+                        }}
+                      >
+                        {insight.title}
+                      </h3>
+                      <p
+                        className="mt-1 line-clamp-2 text-[11px] leading-relaxed"
+                        style={{
+                          color: theme.textMuted,
+                          fontFamily: theme.bodyFont,
+                        }}
+                      >
+                        {insight.message}
+                      </p>
+                      {insight.metric && (
+                        <p
+                          className="mt-2 font-mono text-base font-medium tabular-nums"
+                          style={{ color: theme.text }}
+                        >
+                          {formatCurrency(insight.metric.value)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════
+            SPENDING VELOCITY — Daily rate, projected, progress bars
+            ════════════════════════════════════════════════════════ */}
+        {forecast && (
+          <motion.div {...sectionReveal()} className="mt-4">
+            <ThemedPanel className="p-5">
+              <ThemedLabel className="mb-4 text-[10px]">
+                Spending Velocity
+              </ThemedLabel>
+
+              {/* Three stats row */}
+              <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <p
+                    className="text-[10px] uppercase tracking-widest"
+                    style={{
+                      color: theme.textMuted,
+                      fontFamily: theme.bodyFont,
+                    }}
+                  >
+                    Daily Rate
+                  </p>
+                  <p
+                    className="mt-1 font-mono text-lg tabular-nums"
+                    style={{ color: theme.text }}
+                  >
+                    {formatCurrency(summary.daily_rate)}/day
+                  </p>
+                </div>
+                <div>
+                  <p
+                    className="text-[10px] uppercase tracking-widest"
+                    style={{
+                      color: theme.textMuted,
+                      fontFamily: theme.bodyFont,
+                    }}
+                  >
+                    Projected
+                  </p>
+                  <p
+                    className="mt-1 font-mono text-lg tabular-nums"
+                    style={{ color: theme.text }}
+                  >
+                    {formatCurrency(forecast.projections.recommended)}
+                  </p>
+                </div>
+                <div>
+                  <p
+                    className="text-[10px] uppercase tracking-widest"
+                    style={{
+                      color: theme.textMuted,
+                      fontFamily: theme.bodyFont,
+                    }}
+                  >
+                    Average
+                  </p>
+                  <p
+                    className="mt-1 font-mono text-lg tabular-nums"
+                    style={{ color: theme.text }}
+                  >
+                    {formatCurrency(summary.avg_monthly)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Month progress bar */}
+              <div className="mb-3">
+                <div className="mb-1.5 flex justify-between">
+                  <span
+                    className="text-[10px] uppercase tracking-widest"
+                    style={{
+                      color: theme.textMuted,
+                      fontFamily: theme.bodyFont,
+                    }}
+                  >
+                    Month Progress
+                  </span>
+                  <span
+                    className="font-mono text-[11px] tabular-nums"
+                    style={{ color: theme.textMuted }}
+                  >
+                    {forecast.current_month.days_elapsed} /{" "}
+                    {forecast.current_month.days_in_month} days
+                  </span>
+                </div>
+                <ProgressBar
+                  pct={
+                    (forecast.current_month.days_elapsed /
+                      forecast.current_month.days_in_month) *
+                    100
+                  }
+                  color={
+                    theme.mode === "dark"
+                      ? "rgba(255,255,255,0.25)"
+                      : "rgba(0,0,0,0.15)"
+                  }
+                  trackColor={
+                    theme.mode === "dark"
+                      ? "rgba(255,255,255,0.06)"
+                      : "rgba(0,0,0,0.06)"
+                  }
+                />
+              </div>
+
+              {/* Spending trajectory bar */}
+              <div>
+                <div className="mb-1.5 flex justify-between">
+                  <span
+                    className="text-[10px] uppercase tracking-widest"
+                    style={{
+                      color: theme.textMuted,
+                      fontFamily: theme.bodyFont,
+                    }}
+                  >
+                    Projected vs Average
+                  </span>
+                  <span
+                    className="font-mono text-[11px] tabular-nums"
+                    style={{
+                      color: sentimentColor(
+                        forecast.vs_average.projected_change_pct
+                      ),
+                    }}
+                  >
+                    {forecast.vs_average.projected_change_pct > 0 ? "+" : ""}
+                    {forecast.vs_average.projected_change_pct.toFixed(1)}%
+                  </span>
+                </div>
+                <ProgressBar
+                  pct={
+                    (forecast.projections.recommended / summary.avg_monthly) *
+                    100
+                  }
+                  color={velocityBarColor}
+                  trackColor={
+                    theme.mode === "dark"
+                      ? "rgba(255,255,255,0.06)"
+                      : "rgba(0,0,0,0.06)"
+                  }
+                  delay={0.15}
+                />
+              </div>
+            </ThemedPanel>
+          </motion.div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════
+            BUDGET PROGRESS — Conditional, only when budgets exist
+            ════════════════════════════════════════════════════════ */}
+        {budgetProgress && budgetProgress.length > 0 && (
+          <motion.div {...sectionReveal()} className="mt-4">
+            <ThemedPanel className="p-5">
+              <ThemedLabel className="mb-4 text-[10px]">
+                Budget Progress
+              </ThemedLabel>
+              <div className="space-y-4">
+                {[...budgetProgress]
+                  .sort((a, b) => b.pct_used - a.pct_used)
+                  .map((bp, i) => {
+                    const barColor =
+                      bp.status === "over_budget"
+                        ? theme.danger
+                        : bp.status === "warning"
+                          ? theme.accent
+                          : theme.success;
+
+                    const statusLabel =
+                      bp.status === "over_budget"
+                        ? "Over"
+                        : bp.status === "warning"
+                          ? "Warning"
+                          : "On Track";
+
+                    const statusStyle =
+                      bp.status === "over_budget"
+                        ? { backgroundColor: `color-mix(in srgb, ${theme.danger} 15%, transparent)`, color: theme.danger }
+                        : bp.status === "warning"
+                          ? { backgroundColor: `color-mix(in srgb, ${theme.accent} 15%, transparent)`, color: theme.accent }
+                          : { backgroundColor: `color-mix(in srgb, ${theme.success} 15%, transparent)`, color: theme.success };
+
+                    return (
+                      <div key={bp.category}>
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span
+                            className="text-[13px]"
+                            style={{
+                              fontFamily: theme.bodyFont,
+                              color: theme.text,
+                            }}
+                          >
+                            {bp.category}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="font-mono text-[13px] tabular-nums"
+                              style={{ color: theme.text }}
+                            >
+                              {formatCurrency(bp.spent)}
+                            </span>
+                            <span
+                              className="font-mono text-[11px] tabular-nums"
+                              style={{ color: theme.textMuted }}
+                            >
+                              / {formatCurrency(bp.monthly_limit)}
+                            </span>
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                              style={statusStyle}
+                            >
+                              {statusLabel}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <ProgressBar
+                          pct={bp.pct_used}
+                          color={barColor}
+                          trackColor={
+                            theme.mode === "dark"
+                              ? "rgba(255,255,255,0.06)"
+                              : "rgba(0,0,0,0.06)"
+                          }
+                          delay={i * 0.08}
+                        />
+
+                        {/* Projected marker */}
+                        {bp.status !== "over_budget" &&
+                          bp.projected_pct > bp.pct_used && (
+                            <div className="relative mt-0.5 h-0">
+                              <div
+                                className="absolute h-2 w-0.5 rounded"
+                                style={{
+                                  left: `${Math.min(bp.projected_pct, 100)}%`,
+                                  backgroundColor: theme.textMuted,
+                                  opacity: 0.5,
+                                }}
+                                title={`Projected: ${formatCurrency(bp.projected_spend)}`}
+                              />
+                            </div>
+                          )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </ThemedPanel>
+          </motion.div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════
             TREND CHART — 12-month trajectory
             ════════════════════════════════════════════════════════ */}
         {chartData.length > 0 && (
           <motion.div {...sectionReveal()} className="mt-4">
             <ThemedPanel className="overflow-hidden p-0">
-              {/* Chart bleeds to panel edges — no inner padding on chart itself */}
               <div className="px-4 pt-5 pb-0 md:px-6">
                 <ResponsiveContainer width="100%" height={260}>
                   <ComposedChart
@@ -513,11 +1040,12 @@ export function Meridian({
                     />
                     <Tooltip
                       contentStyle={tooltipStyle}
-                      formatter={(v?: number) =>
-                        v != null
-                          ? [formatCurrency(v), "Total"]
-                          : ["—", "Total"]
-                      }
+                      formatter={(v?: number, name?: string) => {
+                        if (v == null) return ["\u2014", name ?? ""];
+                        const label =
+                          name === "rollingAvg" ? "3-Mo Avg" : "Actual";
+                        return [formatCurrency(v), label];
+                      }}
                       labelFormatter={(label) => {
                         const str = String(label);
                         const [y, m] = str.split("-");
@@ -528,9 +1056,24 @@ export function Meridian({
                         });
                       }}
                     />
+                    <Legend
+                      verticalAlign="top"
+                      align="right"
+                      iconSize={8}
+                      wrapperStyle={{
+                        fontSize: 10,
+                        color: theme.textMuted,
+                        fontFamily: theme.bodyFont,
+                        paddingBottom: 8,
+                      }}
+                      formatter={(value: string) =>
+                        value === "rollingAvg" ? "3-Mo Avg" : "Actual"
+                      }
+                    />
                     <Area
                       type="monotone"
                       dataKey="total"
+                      name="total"
                       stroke={theme.chartStroke}
                       strokeWidth={2}
                       fill={`url(#${gradientId})`}
@@ -539,6 +1082,7 @@ export function Meridian({
                     <Line
                       type="monotone"
                       dataKey="rollingAvg"
+                      name="rollingAvg"
                       stroke={theme.textMuted}
                       strokeWidth={1}
                       strokeDasharray="4 4"
@@ -691,7 +1235,7 @@ export function Meridian({
         )}
 
         {/* ════════════════════════════════════════════════════════
-            TOP MERCHANTS — asymmetric grid, lead merchant is larger
+            TOP MERCHANTS — Enhanced with frequency + active months
             ════════════════════════════════════════════════════════ */}
         {topMerchants.length > 0 && (
           <motion.div {...sectionReveal()} className="mt-4">
@@ -737,32 +1281,45 @@ export function Meridian({
                       style={{ color: theme.textMuted }}
                     >
                       <span style={{ fontFamily: theme.bodyFont }}>
-                        {topMerchants[0].count} visit
+                        {topMerchants[0].count} txn
                         {topMerchants[0].count !== 1 ? "s" : ""}
                       </span>
-                      <span className="mx-1.5 opacity-40">·</span>
+                      <span className="mx-1.5 opacity-40">&middot;</span>
                       <span
                         className="font-mono"
                         style={{ color: theme.textMutedSmall }}
                       >
-                        {formatCurrency(topMerchants[0].avg_amount)} avg
+                        ~{formatCurrency(topMerchants[0].avg_amount)}/txn
+                      </span>
+                      <span className="mx-1.5 opacity-40">&middot;</span>
+                      <span style={{ fontFamily: theme.bodyFont }}>
+                        {topMerchants[0].active_months} month
+                        {topMerchants[0].active_months !== 1 ? "s" : ""}
                       </span>
                     </p>
                   </div>
-                  <p
-                    className="font-mono text-lg tabular-nums"
-                    style={{
-                      color: theme.text,
-                      fontFamily: theme.displayFont,
-                      fontWeight: isPaper ? 400 : 700,
-                    }}
-                  >
-                    {formatCurrency(topMerchants[0].total)}
-                  </p>
+                  <div className="text-right">
+                    <p
+                      className="font-mono text-lg tabular-nums"
+                      style={{
+                        color: theme.text,
+                        fontFamily: theme.displayFont,
+                        fontWeight: isPaper ? 400 : 700,
+                      }}
+                    >
+                      {formatCurrency(topMerchants[0].total)}
+                    </p>
+                    <p
+                      className="mt-0.5 font-mono text-[11px] tabular-nums"
+                      style={{ color: theme.textMuted }}
+                    >
+                      {topMerchants[0].monthly_frequency.toFixed(1)}x/mo
+                    </p>
+                  </div>
                 </motion.div>
               )}
 
-              {/* Remaining merchants — compact grid */}
+              {/* Remaining merchants — compact grid with enhanced data */}
               {topMerchants.length > 1 && (
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-5">
                   {topMerchants.slice(1).map((m, i) => (
@@ -799,89 +1356,21 @@ export function Meridian({
                       >
                         {formatCurrency(m.total)}
                       </p>
+                      <p
+                        className="mt-0.5 text-[10px]"
+                        style={{
+                          color: theme.textMuted,
+                          fontFamily: theme.bodyFont,
+                          opacity: 0.7,
+                        }}
+                      >
+                        {m.count} txns &middot; {m.active_months}mo
+                      </p>
                     </motion.div>
                   ))}
                 </div>
               )}
             </ThemedPanel>
-          </motion.div>
-        )}
-
-        {/* ════════════════════════════════════════════════════════
-            ALERT — Anomaly narrative (conditional)
-            ════════════════════════════════════════════════════════ */}
-        {topAnomaly && (
-          <motion.div
-            initial={{ opacity: 0, x: -12 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] as const }}
-            className="mt-4"
-          >
-            <div
-              className="relative overflow-hidden rounded-2xl p-5"
-              style={{
-                backgroundColor:
-                  theme.mode === "dark"
-                    ? `color-mix(in srgb, ${alertBorderColor(topAnomaly.severity)} 4%, ${theme.surface})`
-                    : `color-mix(in srgb, ${alertBorderColor(topAnomaly.severity)} 3%, ${theme.surface})`,
-                border: `1px solid ${theme.mode === "dark" ? "rgba(255,255,255,0.06)" : theme.border}`,
-                boxShadow: theme.cardShadow,
-              }}
-            >
-              {/* Accent stripe */}
-              <div
-                className="absolute top-0 left-0 h-full w-[3px]"
-                style={{
-                  backgroundColor: alertBorderColor(topAnomaly.severity),
-                }}
-              />
-              <p
-                className="pl-3 text-[13px] leading-relaxed"
-                style={{
-                  fontFamily: theme.bodyFont,
-                  color: theme.text,
-                  lineHeight: theme.bodyLineHeight,
-                }}
-              >
-                {topAnomaly.category} is running{" "}
-                <span
-                  className="font-mono font-medium"
-                  style={{ color: theme.danger }}
-                >
-                  {Math.round(topAnomaly.pct_above_avg)}%
-                </span>{" "}
-                above your average this month.
-                {categoryForecasts.has(topAnomaly.category) && (
-                  <>
-                    {" "}
-                    At this pace, you&apos;ll hit{" "}
-                    <span
-                      className="font-mono font-medium"
-                      style={{ color: theme.danger }}
-                    >
-                      {formatCurrency(
-                        categoryForecasts.get(topAnomaly.category)!
-                      )}
-                    </span>{" "}
-                    by end of month
-                    {topAnomaly.avg_monthly > 0 && (
-                      <>
-                        {" — "}
-                        <span className="font-mono">
-                          {formatCurrency(
-                            categoryForecasts.get(topAnomaly.category)! -
-                              topAnomaly.avg_monthly
-                          )}
-                        </span>{" "}
-                        more than typical
-                      </>
-                    )}
-                    .
-                  </>
-                )}
-              </p>
-            </div>
           </motion.div>
         )}
 
@@ -904,7 +1393,7 @@ export function Meridian({
                   className="text-[10px]"
                   style={{ color: theme.textMuted }}
                 >
-                  ·
+                  &middot;
                 </span>
                 <span
                   className="font-mono text-[11px]"
@@ -916,7 +1405,7 @@ export function Meridian({
                   className="text-[10px]"
                   style={{ color: theme.textMuted }}
                 >
-                  ·
+                  &middot;
                 </span>
                 <span
                   className="text-[10px]"
@@ -941,7 +1430,7 @@ export function Meridian({
                         className="mx-1.5 opacity-30"
                         style={{ color: theme.textMuted }}
                       >
-                        ·
+                        &middot;
                       </span>
                     )}
                     <span style={{ fontFamily: theme.bodyFont }}>
@@ -975,11 +1464,11 @@ export function Meridian({
                     opacity: 0.85,
                   }}
                 >
-                  ⚠ {forgottenRecurring.length} possibly forgotten
+                  {"\u26A0"} {forgottenRecurring.length} possibly forgotten
                   {forgottenRecurring[0] && (
                     <>
                       {" "}
-                      — {forgottenRecurring[0].merchant},{" "}
+                      &mdash; {forgottenRecurring[0].merchant},{" "}
                       {forgottenRecurring[0].last_gap_days}d ago
                     </>
                   )}
@@ -987,35 +1476,6 @@ export function Meridian({
               )}
             </ThemedPanel>
           </motion.div>
-        )}
-
-        {/* ════════════════════════════════════════════════════════
-            INSIGHT — Pull-quote (conditional)
-            ════════════════════════════════════════════════════════ */}
-        {topInsight && (
-          <>
-            <ThemedDivider className="mt-10 mb-10" />
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-60px" }}
-              transition={{ duration: 1 }}
-              className="px-4 text-center md:px-12"
-            >
-              <p
-                className="text-lg leading-relaxed md:text-xl"
-                style={{
-                  fontFamily: theme.displayFont,
-                  fontWeight: isPaper ? 400 : 700,
-                  fontStyle: isPaper ? "italic" : "normal",
-                  color: theme.text,
-                  lineHeight: 1.7,
-                }}
-              >
-                &ldquo;{topInsight.message}&rdquo;
-              </p>
-            </motion.div>
-          </>
         )}
       </div>
     </ThemedBackground>

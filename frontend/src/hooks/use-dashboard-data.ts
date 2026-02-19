@@ -12,6 +12,7 @@ import {
   getRecurring,
   getHabits,
   getDaily,
+  getBudgetProgress,
 } from "@/lib/api";
 import {
   TEST_SUMMARY,
@@ -36,6 +37,7 @@ import type {
   RecurringTransaction,
   HabitAnalysis,
   DailySpending,
+  BudgetProgress,
 } from "@/types";
 
 interface DashboardData {
@@ -49,6 +51,7 @@ interface DashboardData {
   recurring: RecurringTransaction[] | null;
   habits: HabitAnalysis | null;
   daily: DailySpending[] | null;
+  budgetProgress: BudgetProgress[];
   loading: boolean;
   error: string | null;
   useTestData: boolean;
@@ -70,6 +73,7 @@ export function useDashboardData(): DashboardData {
     recurring: null,
     habits: null,
     daily: null,
+    budgetProgress: [],
   });
 
   useEffect(() => {
@@ -85,6 +89,7 @@ export function useDashboardData(): DashboardData {
         recurring: TEST_RECURRING,
         habits: TEST_HABITS,
         daily: TEST_DAILY,
+        budgetProgress: [],
       });
       setLoading(false);
       setError(null);
@@ -103,6 +108,7 @@ export function useDashboardData(): DashboardData {
       getRecurring(),
       getHabits(),
       getDaily(),
+      getBudgetProgress().catch(() => ({ data: [] as BudgetProgress[] })),
     ])
       .then(
         ([
@@ -116,6 +122,7 @@ export function useDashboardData(): DashboardData {
           recurring,
           habits,
           daily,
+          budgetProg,
         ]) => {
           setData({
             summary: summary.data as EnhancedSummaryStats,
@@ -128,6 +135,7 @@ export function useDashboardData(): DashboardData {
             recurring: recurring.data.recurring,
             habits: habits.data,
             daily: daily.data,
+            budgetProgress: budgetProg.data,
           });
         }
       )

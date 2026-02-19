@@ -179,8 +179,30 @@ export interface ForecastData {
   trajectory: "below_average" | "near_average" | "above_average" | "well_above_average";
 }
 
+// ── Budget ──
+
+export interface Budget {
+  id: string;
+  category: string;
+  monthly_limit: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BudgetProgress {
+  category: string;
+  monthly_limit: number;
+  spent: number;
+  remaining: number;
+  pct_used: number;
+  projected_spend: number;
+  projected_pct: number;
+  status: "on_track" | "warning" | "over_budget";
+  days_remaining: number;
+}
+
 export interface Insight {
-  type: "anomaly" | "trend" | "forecast" | "habit" | "recurring" | "milestone" | "positive";
+  type: "anomaly" | "trend" | "forecast" | "habit" | "recurring" | "milestone" | "positive" | "budget";
   severity: "low" | "medium" | "high";
   icon: string;
   title: string;
@@ -262,4 +284,15 @@ export interface DailySpending {
   date: string;
   total: number;
   count: number;
+}
+
+export interface CategoryDeepDive {
+  category: string;
+  total_spent: number;
+  transaction_count: number;
+  avg_amount: number;
+  monthly_trend: Array<{ month: string; total: number; count: number }>;
+  top_merchants: Array<{ merchant: string; total: number; count: number; avg_amount: number }>;
+  day_of_week: Array<{ day: string; day_num: number; total: number; count: number }>;
+  recent_transactions: Array<{ id: string; date: string; description: string; amount: number }>;
 }

@@ -1424,7 +1424,70 @@ async fn get_insights(State(pool): State<PgPool>) -> Json<serde_json::Value> {
         });
     }
 
-    // 6. Positive insights
+    // 6. Budget insights
+    let budgets: Vec<(String, f64)> = sqlx::query_as(
+        "SELECT category, monthly_limit::float8 FROM budgets",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let days_remaining = d_in_month.saturating_sub(d_elapsed);
+
+    for (budget_cat, budget_limit) in &budgets {
+        let spent = current_map.get(budget_cat).copied().unwrap_or(0.0);
+        let pct = if *budget_limit > 0.0 {
+            spent / budget_limit * 100.0
+        } else {
+            0.0
+        };
+
+        if pct >= 100.0 {
+            scored.push(ScoredInsight {
+                priority: 85.0,
+                insight: Insight {
+                    r#type: "budget".into(),
+                    severity: "high".into(),
+                    icon: "AlertCircle".into(),
+                    title: format!("{} budget exceeded", budget_cat),
+                    message: format!(
+                        "You've spent ${:.0} on {} this month, exceeding your ${:.0} budget.",
+                        spent, budget_cat, budget_limit
+                    ),
+                    metric: Some(serde_json::json!({
+                        "value": spent,
+                        "comparison": budget_limit,
+                        "unit": "dollars"
+                    })),
+                    action: Some(format!("Review {} transactions", budget_cat)),
+                    category: Some(budget_cat.clone()),
+                },
+            });
+        } else if pct >= 80.0 {
+            scored.push(ScoredInsight {
+                priority: 55.0,
+                insight: Insight {
+                    r#type: "budget".into(),
+                    severity: "medium".into(),
+                    icon: "AlertTriangle".into(),
+                    title: format!("{} budget at {:.0}%", budget_cat, pct),
+                    message: format!(
+                        "${:.0} of ${:.0} {} budget used with {} days remaining.",
+                        spent, budget_limit, budget_cat, days_remaining
+                    ),
+                    metric: Some(serde_json::json!({
+                        "value": spent,
+                        "comparison": budget_limit,
+                        "unit": "dollars"
+                    })),
+                    action: None,
+                    category: Some(budget_cat.clone()),
+                },
+            });
+        }
+    }
+
+    // 7. Positive insights
     if avg_monthly.0 > 0.0 && this_month.0 < avg_monthly.0 * 0.9 {
         scored.push(ScoredInsight {
             priority: 25.0,

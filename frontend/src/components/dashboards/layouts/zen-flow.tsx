@@ -31,6 +31,7 @@ import type {
   DailySpending,
   EnhancedMerchant,
   Card,
+  BudgetProgress,
 } from "@/types";
 
 export interface DashboardLayoutProps {
@@ -44,6 +45,7 @@ export interface DashboardLayoutProps {
   daily: DailySpending[] | null;
   merchants: EnhancedMerchant[] | null;
   cards: Card[];
+  budgetProgress?: BudgetProgress[];
 }
 
 export function ZenFlow({

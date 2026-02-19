@@ -16,6 +16,9 @@ import type {
   RecurringTransaction,
   HabitAnalysis,
   DailySpending,
+  CategoryDeepDive,
+  Budget,
+  BudgetProgress,
 } from "@/types";
 
 async function fetcher<T>(url: string, options?: RequestInit): Promise<T> {
@@ -189,4 +192,34 @@ export async function getDaily(
   if (end) params.set("end_date", end);
   const query = params.toString() ? `?${params.toString()}` : "";
   return fetcher(`/stats/daily${query}`);
+}
+
+export async function getCategoryDeepDive(
+  category: string
+): Promise<{ data: CategoryDeepDive }> {
+  return fetcher(`/stats/category/${encodeURIComponent(category)}`);
+}
+
+// ── Budgets ──
+
+export async function getBudgets(): Promise<{ data: Budget[] }> {
+  return fetcher("/budgets");
+}
+
+export async function upsertBudget(
+  category: string,
+  monthlyLimit: number
+): Promise<{ data: Budget }> {
+  return fetcher("/budgets", {
+    method: "POST",
+    body: JSON.stringify({ category, monthly_limit: monthlyLimit }),
+  });
+}
+
+export async function deleteBudget(id: string): Promise<void> {
+  return fetcher(`/budgets/${id}`, { method: "DELETE" });
+}
+
+export async function getBudgetProgress(): Promise<{ data: BudgetProgress[] }> {
+  return fetcher("/budgets/progress");
 }

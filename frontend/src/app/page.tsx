@@ -17,6 +17,7 @@ export default function DashboardPage() {
     daily,
     merchants,
     cards,
+    budgetProgress,
     loading,
     error,
     useTestData,
@@ -52,6 +53,7 @@ export default function DashboardPage() {
           daily={daily}
           merchants={merchants}
           cards={cards}
+          budgetProgress={budgetProgress}
         />
       )}
     </div>

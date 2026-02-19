@@ -17,8 +17,12 @@ import {
   deleteCard,
   deleteAllTransactions,
   getSummary,
+  getBudgets,
+  upsertBudget,
+  deleteBudget,
 } from "@/lib/api";
-import type { Card } from "@/types";
+import { CATEGORIES } from "@/lib/constants";
+import type { Card, Budget } from "@/types";
 
 // ── Expand/collapse animation variants ──
 const expandVariants = {
@@ -147,6 +151,15 @@ export default function SettingsPage() {
   const [deletedAll, setDeletedAll] = useState(false);
   const confirmDeleteAllTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // ── Budgets state ──
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [loadingBudgets, setLoadingBudgets] = useState(true);
+  const [budgetCategory, setBudgetCategory] = useState("");
+  const [budgetLimit, setBudgetLimit] = useState("");
+  const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
+  const [editBudgetLimit, setEditBudgetLimit] = useState("");
+  const [savingBudget, setSavingBudget] = useState(false);
+
   // ── Loading ──
   const [loadingConfig, setLoadingConfig] = useState(true);
 
@@ -172,6 +185,67 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchCards();
   }, [fetchCards]);
+
+  // ── Fetch budgets ──
+  const fetchBudgets = useCallback(() => {
+    setLoadingBudgets(true);
+    getBudgets()
+      .then((res) => setBudgets(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingBudgets(false));
+  }, []);
+
+  useEffect(() => {
+    fetchBudgets();
+  }, [fetchBudgets]);
+
+  // Available categories (exclude already-budgeted ones)
+  const availableCategories = CATEGORIES.filter(
+    (c) => !budgets.some((b) => b.category === c)
+  );
+
+  // ── Budget handlers ──
+  const handleAddBudget = async () => {
+    if (!budgetCategory || !budgetLimit) return;
+    const limit = parseFloat(budgetLimit);
+    if (isNaN(limit) || limit <= 0) return;
+    setSavingBudget(true);
+    try {
+      await upsertBudget(budgetCategory, limit);
+      setBudgetCategory("");
+      setBudgetLimit("");
+      fetchBudgets();
+    } catch {
+      // Fail silently
+    } finally {
+      setSavingBudget(false);
+    }
+  };
+
+  const handleEditBudget = async (budget: Budget) => {
+    const limit = parseFloat(editBudgetLimit);
+    if (isNaN(limit) || limit <= 0) return;
+    setSavingBudget(true);
+    try {
+      await upsertBudget(budget.category, limit);
+      setEditingBudgetId(null);
+      setEditBudgetLimit("");
+      fetchBudgets();
+    } catch {
+      // Fail silently
+    } finally {
+      setSavingBudget(false);
+    }
+  };
+
+  const handleDeleteBudget = async (id: string) => {
+    try {
+      await deleteBudget(id);
+      fetchBudgets();
+    } catch {
+      // Fail silently
+    }
+  };
 
   // ── Fetch transaction count ──
   useEffect(() => {
@@ -580,7 +654,255 @@ export default function SettingsPage() {
           </ThemedPanel>
         </div>
 
-        {/* ═══ 3. Data ═══ */}
+        {/* ═══ 3. Budgets ═══ */}
+        <div>
+          <ThemedLabel className="mb-3">Budgets</ThemedLabel>
+          <ThemedPanel>
+            <div style={{ padding: theme.panelPadding }}>
+              <p
+                style={{
+                  fontFamily: theme.bodyFont,
+                  fontSize: "13px",
+                  color: theme.textMuted,
+                  lineHeight: theme.bodyLineHeight,
+                  marginBottom: "16px",
+                }}
+              >
+                Set monthly spending limits for categories you want to track.
+                Leave empty for categories you don&apos;t want to budget.
+              </p>
+
+              {loadingBudgets ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <ThemedSkeleton variant="row" />
+                  <ThemedSkeleton variant="row" />
+                </div>
+              ) : (
+                <>
+                  {/* Active budgets */}
+                  {budgets.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      {budgets.map((budget, i) => (
+                        <div key={budget.id}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "12px 0",
+                              borderBottom:
+                                i < budgets.length - 1
+                                  ? `1px solid ${theme.border}`
+                                  : "none",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: theme.bodyFont,
+                                fontSize: "14px",
+                                color: theme.text,
+                              }}
+                            >
+                              {budget.category}
+                            </span>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <AnimatePresence mode="wait">
+                                {editingBudgetId === budget.id ? (
+                                  <motion.div
+                                    key="edit"
+                                    variants={fadeVariants}
+                                    initial="hidden"
+                                    animate="visible"
+                                    exit="exit"
+                                    style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                                  >
+                                    <div style={{ position: "relative", width: "100px" }}>
+                                      <span
+                                        style={{
+                                          position: "absolute",
+                                          left: "10px",
+                                          top: "50%",
+                                          transform: "translateY(-50%)",
+                                          fontFamily: "var(--font-mono, monospace)",
+                                          fontSize: "13px",
+                                          color: theme.textMuted,
+                                          pointerEvents: "none",
+                                        }}
+                                      >
+                                        $
+                                      </span>
+                                      <ThemedInput
+                                        value={editBudgetLimit}
+                                        onChange={(e) => setEditBudgetLimit(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") handleEditBudget(budget);
+                                          if (e.key === "Escape") {
+                                            setEditingBudgetId(null);
+                                            setEditBudgetLimit("");
+                                          }
+                                        }}
+                                        onBlur={() => {
+                                          const v = parseFloat(editBudgetLimit);
+                                          if (!isNaN(v) && v > 0) {
+                                            setEditBudgetLimit(v.toFixed(2));
+                                          }
+                                        }}
+                                        placeholder="0.00"
+                                        style={{ paddingLeft: "22px", width: "100%" }}
+                                        autoFocus
+                                      />
+                                    </div>
+                                    <ThemedButton
+                                      variant="primary"
+                                      size="sm"
+                                      onClick={() => handleEditBudget(budget)}
+                                      loading={savingBudget}
+                                      disabled={!editBudgetLimit || parseFloat(editBudgetLimit) <= 0}
+                                    >
+                                      Save
+                                    </ThemedButton>
+                                    <ThemedButton
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setEditingBudgetId(null);
+                                        setEditBudgetLimit("");
+                                      }}
+                                    >
+                                      Cancel
+                                    </ThemedButton>
+                                  </motion.div>
+                                ) : (
+                                  <motion.div
+                                    key="display"
+                                    variants={fadeVariants}
+                                    initial="hidden"
+                                    animate="visible"
+                                    exit="exit"
+                                    style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontFamily: "var(--font-mono, monospace)",
+                                        fontSize: "13px",
+                                        color: theme.textMuted,
+                                      }}
+                                    >
+                                      ${budget.monthly_limit.toFixed(2)}/mo
+                                    </span>
+                                    <ThemedButton
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setEditingBudgetId(budget.id);
+                                        setEditBudgetLimit(budget.monthly_limit.toFixed(2));
+                                      }}
+                                    >
+                                      Edit
+                                    </ThemedButton>
+                                    <ThemedButton
+                                      variant="danger"
+                                      size="sm"
+                                      onClick={() => handleDeleteBudget(budget.id)}
+                                    >
+                                      &times;
+                                    </ThemedButton>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add new budget */}
+                  {availableCategories.length > 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginTop: budgets.length > 0 ? "16px" : "0",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <select
+                        value={budgetCategory}
+                        onChange={(e) => setBudgetCategory(e.target.value)}
+                        style={{
+                          fontFamily: theme.bodyFont,
+                          fontSize: "13px",
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: "10px",
+                          padding: "8px 12px",
+                          appearance: "none",
+                          cursor: "pointer",
+                          minWidth: "140px",
+                        }}
+                      >
+                        <option value="">Select category</option>
+                        {availableCategories.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div style={{ position: "relative", width: "100px" }}>
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: "10px",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            fontFamily: "var(--font-mono, monospace)",
+                            fontSize: "13px",
+                            color: theme.textMuted,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          $
+                        </span>
+                        <ThemedInput
+                          value={budgetLimit}
+                          onChange={(e) => setBudgetLimit(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleAddBudget();
+                          }}
+                          onBlur={() => {
+                            const v = parseFloat(budgetLimit);
+                            if (!isNaN(v) && v > 0) {
+                              setBudgetLimit(v.toFixed(2));
+                            }
+                          }}
+                          placeholder="0.00"
+                          style={{ paddingLeft: "22px", width: "100%" }}
+                        />
+                      </div>
+
+                      <ThemedButton
+                        variant="primary"
+                        size="sm"
+                        onClick={handleAddBudget}
+                        loading={savingBudget}
+                        disabled={!budgetCategory || !budgetLimit || parseFloat(budgetLimit) <= 0}
+                      >
+                        Add
+                      </ThemedButton>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </ThemedPanel>
+        </div>
+
+        {/* ═══ 4. Data ═══ */}
         <div>
           <ThemedLabel className="mb-3">Data</ThemedLabel>
           <ThemedPanel>
