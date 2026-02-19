@@ -129,7 +129,7 @@ export async function importCSV(
 }
 
 export async function getImportHistory(): Promise<{ data: ImportRecord[] }> {
-  return fetcher("/imports");
+  return fetcher("/import-history");
 }
 
 // ── Stats ──

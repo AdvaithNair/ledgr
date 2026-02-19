@@ -24,7 +24,7 @@ pub fn routes() -> Router<PgPool> {
         .route("/stats/habits", get(get_habits))
         .route("/stats/daily", get(get_daily))
         .route("/stats/category/:category", get(get_category_deep_dive))
-        .route("/insights", get(get_insights))
+        .route("/stats/insights", get(get_insights))
 }
 
 // ── Helpers ──

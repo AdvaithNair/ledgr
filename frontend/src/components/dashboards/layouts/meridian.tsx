@@ -21,7 +21,7 @@ import {
   useTooltipStyle,
   useChartGradientId,
 } from "@/components/dashboards/themed-components";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, fmt } from "@/lib/utils";
 import { getCardColor, getCardLabel, CATEGORY_COLORS } from "@/lib/constants";
 import type {
   EnhancedSummaryStats,
@@ -872,12 +872,12 @@ export function Meridian({
                     className="font-mono text-[11px] tabular-nums"
                     style={{
                       color: sentimentColor(
-                        forecast.vs_average.projected_change_pct
+                        forecast.vs_average?.projected_change_pct ?? 0
                       ),
                     }}
                   >
-                    {forecast.vs_average.projected_change_pct > 0 ? "+" : ""}
-                    {forecast.vs_average.projected_change_pct.toFixed(1)}%
+                    {(forecast.vs_average?.projected_change_pct ?? 0) > 0 ? "+" : ""}
+                    {fmt(forecast.vs_average?.projected_change_pct)}%
                   </span>
                 </div>
                 <ProgressBar

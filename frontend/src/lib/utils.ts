@@ -23,3 +23,9 @@ export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.slice(0, maxLength) + "...";
 }
+
+/** Safely format a number with toFixed, returning fallback if null/undefined */
+export function fmt(value: number | null | undefined, decimals = 1, fallback = "0"): string {
+  if (value == null || isNaN(value)) return fallback;
+  return value.toFixed(decimals);
+}

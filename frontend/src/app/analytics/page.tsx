@@ -33,7 +33,7 @@ import {
 import { ThemedSkeleton } from "@/components/ui/themed-skeleton";
 import { ThemedEmptyState } from "@/components/ui/themed-empty-state";
 import { ThemedBadge } from "@/components/ui/themed-badge";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { formatCurrency, formatDate, cn, fmt } from "@/lib/utils";
 import { CATEGORY_COLORS } from "@/lib/constants";
 import {
   getHabits,
@@ -417,7 +417,7 @@ function HabitsTab({
                     }}
                   >
                     {arrow}{" "}
-                    {Math.abs(cat.three_month_change_pct).toFixed(0)}%
+                    {fmt(Math.abs(cat.three_month_change_pct ?? 0), 0)}%
                   </span>
                   <div style={{ width: 80, height: 20 }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -482,7 +482,7 @@ function HabitsTab({
                   fontWeight: 600,
                 }}
               >
-                {data.merchant_concentration.top_merchant_pct.toFixed(1)}%
+                {fmt(data.merchant_concentration?.top_merchant_pct)}%
               </span>
             </div>
             <ProportionBar
@@ -520,7 +520,7 @@ function HabitsTab({
                 fontWeight: 500,
               }}
             >
-              {data.merchant_concentration.top_3_pct.toFixed(1)}%
+              {fmt(data.merchant_concentration?.top_3_pct)}%
             </span>
           </div>
           <p
@@ -1415,7 +1415,7 @@ function ForecastTab({
                                   whiteSpace: "nowrap",
                                 }}
                               >
-                                {bp.projected_pct.toFixed(0)}% of budget
+                                {fmt(bp.projected_pct, 0)}% of budget
                               </span>
                             );
                           })()}
@@ -1424,7 +1424,7 @@ function ForecastTab({
                       <ThemedTd numeric>
                         <span style={{ color: vsColor }}>
                           {arrow}{" "}
-                          {Math.abs(cat.vs_avg_pct).toFixed(0)}%
+                          {fmt(Math.abs(cat.vs_avg_pct ?? 0), 0)}%
                         </span>
                       </ThemedTd>
                       <ThemedTd>
