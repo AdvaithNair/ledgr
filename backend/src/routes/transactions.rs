@@ -75,13 +75,13 @@ async fn list_transactions(
         where_clause, sort_col, sort_dir, bind_idx, bind_idx + 1
     );
     let count_sql = format!(
-        "SELECT COUNT(*)::bigint FROM transactions {}",
+        "SELECT COUNT(*)::bigint, COALESCE(SUM(amount::float8), 0) FROM transactions {}",
         where_clause
     );
 
     // Build data query
     let mut data_query = sqlx::query_as::<_, crate::models::transaction::Transaction>(&data_sql);
-    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    let mut count_query = sqlx::query_as::<_, (i64, f64)>(&count_sql);
 
     if let Some(ref card) = params.card {
         data_query = data_query.bind(card);
@@ -114,11 +114,11 @@ async fn list_transactions(
             Vec::new()
         }
     };
-    let total: i64 = match count_query.fetch_one(&pool).await {
-        Ok(n) => n,
+    let (total, total_amount) = match count_query.fetch_one(&pool).await {
+        Ok(row) => row,
         Err(e) => {
             tracing::error!("Failed to count transactions: {e}");
-            0
+            (0i64, 0.0f64)
         }
     };
 
@@ -128,7 +128,8 @@ async fn list_transactions(
             "page": page,
             "per_page": per_page,
             "total": total,
-            "total_pages": ((total as f64) / (per_page as f64)).ceil() as i64
+            "total_pages": ((total as f64) / (per_page as f64)).ceil() as i64,
+            "total_amount": total_amount
         }
     }))
 }
@@ -224,6 +225,24 @@ async fn import_csv(
     let mut dup_count = 0i32;
     let total_parsed = parse_result.transactions.len() + parse_result.skipped_user_count;
 
+    // Create import_history record first to get the ID
+    let import_id: Option<Uuid> = match sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO import_history (card, file_name, transaction_count, duplicate_count, skipped_user_count) \
+         VALUES ($1, $2, 0, 0, $3) RETURNING id",
+    )
+    .bind(&card.code)
+    .bind(&file_name)
+    .bind(parse_result.skipped_user_count as i32)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(id) => Some(id),
+        Err(e) => {
+            tracing::error!("Failed to create import history: {e}");
+            None
+        }
+    };
+
     for txn in &parse_result.transactions {
         if existing_hashes.contains(&txn.hash) {
             dup_count += 1;
@@ -231,8 +250,8 @@ async fn import_csv(
         }
 
         let result = sqlx::query(
-            "INSERT INTO transactions (date, description, amount, category, card, card_label, raw_data, hash, merchant_normalized) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            "INSERT INTO transactions (date, description, amount, category, card, card_label, raw_data, hash, merchant_normalized, import_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         )
         .bind(txn.date)
         .bind(&txn.description)
@@ -243,6 +262,7 @@ async fn import_csv(
         .bind(&txn.raw_data)
         .bind(&txn.hash)
         .bind(&txn.merchant_normalized)
+        .bind(import_id)
         .execute(&pool)
         .await;
 
@@ -252,19 +272,19 @@ async fn import_csv(
         }
     }
 
-    if let Err(e) = sqlx::query(
-        "INSERT INTO import_history (card, file_name, transaction_count, duplicate_count, skipped_user_count) \
-         VALUES ($1, $2, $3, $4, $5)",
-    )
-    .bind(&card.code)
-    .bind(&file_name)
-    .bind(new_count)
-    .bind(dup_count)
-    .bind(parse_result.skipped_user_count as i32)
-    .execute(&pool)
-    .await
-    {
-        tracing::error!("Failed to record import history: {e}");
+    // Update import_history with actual counts
+    if let Some(id) = import_id {
+        if let Err(e) = sqlx::query(
+            "UPDATE import_history SET transaction_count = $1, duplicate_count = $2 WHERE id = $3",
+        )
+        .bind(new_count)
+        .bind(dup_count)
+        .bind(id)
+        .execute(&pool)
+        .await
+        {
+            tracing::error!("Failed to update import history counts: {e}");
+        }
     }
 
     Json(serde_json::json!({

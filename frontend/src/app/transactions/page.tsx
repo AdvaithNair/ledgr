@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   format,
@@ -19,6 +20,7 @@ import {
 } from "@/components/dashboards/themed-components";
 import { ThemedButton } from "@/components/ui/themed-button";
 import { ThemedInput, ThemedSelect } from "@/components/ui/themed-input";
+import { ThemedDropdown, type DropdownOption } from "@/components/ui/themed-dropdown";
 import { ThemedBadge } from "@/components/ui/themed-badge";
 import { ThemedSkeleton } from "@/components/ui/themed-skeleton";
 import { ThemedEmptyState } from "@/components/ui/themed-empty-state";
@@ -40,7 +42,7 @@ import type { Transaction, PaginationMeta, Card } from "@/types";
 
 // ── Date range helpers ──
 
-function getDateRangeParams(range: string): Record<string, string> {
+function getDateRangeParams(range: string, customStart?: string, customEnd?: string): Record<string, string> {
   const now = new Date();
   switch (range) {
     case "this_month": {
@@ -68,24 +70,15 @@ function getDateRangeParams(range: string): Record<string, string> {
       const start = startOfYear(now);
       return { start_date: format(start, "yyyy-MM-dd") };
     }
+    case "custom": {
+      const params: Record<string, string> = {};
+      if (customStart) params.start_date = customStart;
+      if (customEnd) params.end_date = customEnd;
+      return params;
+    }
     case "all":
     default:
       return {};
-  }
-}
-
-function getSortParams(sortBy: string): Record<string, string> {
-  switch (sortBy) {
-    case "date_desc":
-      return { sort_by: "date", sort_dir: "desc" };
-    case "date_asc":
-      return { sort_by: "date", sort_dir: "asc" };
-    case "amount_desc":
-      return { sort_by: "amount", sort_dir: "desc" };
-    case "amount_asc":
-      return { sort_by: "amount", sort_dir: "asc" };
-    default:
-      return { sort_by: "date", sort_dir: "desc" };
   }
 }
 
@@ -136,10 +129,23 @@ function ChevronIcon({
   );
 }
 
+function SortArrow({ direction, color }: { direction: "asc" | "desc" | null; color: string }) {
+  if (!direction) return null;
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: "4px", display: "inline-block" }}>
+      <path
+        d={direction === "asc" ? "M5 2L8 7H2L5 2Z" : "M5 8L2 3H8L5 8Z"}
+        fill={color}
+      />
+    </svg>
+  );
+}
+
 // ── Main page ──
 
-export default function TransactionsPage() {
+function TransactionsPageInner() {
   const { theme } = useTheme();
+  const searchParams = useSearchParams();
 
   // State
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -152,8 +158,12 @@ export default function TransactionsPage() {
   const [cardFilter, setCardFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [dateRange, setDateRange] = useState("this_month");
-  const [sortBy, setSortBy] = useState("date_desc");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [sortColumn, setSortColumn] = useState("date");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [smartFallbackDone, setSmartFallbackDone] = useState(false);
 
   // Expandable rows
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -164,6 +174,26 @@ export default function TransactionsPage() {
   const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializedRef = useRef(false);
+
+  // Parse URL params on mount
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const urlSearch = searchParams.get("search");
+    const urlDateRange = searchParams.get("date_range");
+    const urlCard = searchParams.get("card");
+    const urlCategory = searchParams.get("category");
+
+    if (urlSearch) {
+      setSearch(urlSearch);
+      setDebouncedSearch(urlSearch);
+    }
+    if (urlDateRange) setDateRange(urlDateRange);
+    if (urlCard) setCardFilter(urlCard);
+    if (urlCategory) setCategoryFilter(urlCategory);
+  }, [searchParams]);
 
   // Debounce search
   useEffect(() => {
@@ -189,14 +219,15 @@ export default function TransactionsPage() {
     const params: Record<string, string> = {
       page: String(page),
       per_page: "25",
-      ...getDateRangeParams(dateRange),
-      ...getSortParams(sortBy),
+      ...getDateRangeParams(dateRange, customStartDate, customEndDate),
+      sort_by: sortColumn,
+      sort_order: sortDirection,
     };
     if (debouncedSearch) params.search = debouncedSearch;
     if (cardFilter) params.card = cardFilter;
     if (categoryFilter) params.category = categoryFilter;
     return params;
-  }, [page, debouncedSearch, cardFilter, categoryFilter, dateRange, sortBy]);
+  }, [page, debouncedSearch, cardFilter, categoryFilter, dateRange, customStartDate, customEndDate, sortColumn, sortDirection]);
 
   // Fetch transactions
   useEffect(() => {
@@ -208,6 +239,39 @@ export default function TransactionsPage() {
         if (cancelled) return;
         setTransactions(res.data);
         setMeta(res.meta);
+
+        // Smart date range fallback: if this_month returns 0 results and no other filters
+        if (
+          dateRange === "this_month" &&
+          !smartFallbackDone &&
+          res.meta.total === 0 &&
+          !debouncedSearch &&
+          !cardFilter &&
+          !categoryFilter
+        ) {
+          setSmartFallbackDone(true);
+          // Try last_month
+          getTransactions({ ...buildParams(), ...getDateRangeParams("last_month"), page: "1" })
+            .then((r2) => {
+              if (cancelled) return;
+              if (r2.meta.total > 0) {
+                setDateRange("last_month");
+              } else {
+                // Try last_3_months
+                getTransactions({ ...buildParams(), ...getDateRangeParams("last_3_months"), page: "1" })
+                  .then((r3) => {
+                    if (cancelled) return;
+                    if (r3.meta.total > 0) {
+                      setDateRange("last_3_months");
+                    } else {
+                      setDateRange("all");
+                    }
+                  })
+                  .catch(() => {});
+              }
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -226,7 +290,18 @@ export default function TransactionsPage() {
   // Clear selection on page/filter change
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [page, debouncedSearch, cardFilter, categoryFilter, dateRange, sortBy]);
+  }, [page, debouncedSearch, cardFilter, categoryFilter, dateRange, sortColumn, sortDirection]);
+
+  // Column sorting handler
+  const handleColumnSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortColumn(column);
+      setSortDirection(column === "amount" ? "desc" : "desc");
+    }
+    setPage(1);
+  };
 
   // Category update handler
   const handleCategoryChange = useCallback(
@@ -254,7 +329,6 @@ export default function TransactionsPage() {
     setBulkUpdating(true);
     try {
       await bulkUpdateCategory(Array.from(selectedIds), bulkCategory);
-      // Refresh data
       const res = await getTransactions(buildParams());
       setTransactions(res.data);
       setMeta(res.meta);
@@ -271,29 +345,21 @@ export default function TransactionsPage() {
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
-  // Toggle single selection
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
-  // Select all on page
   const toggleSelectAll = () => {
     if (selectedIds.size === transactions.length) {
       setSelectedIds(new Set());
@@ -302,18 +368,20 @@ export default function TransactionsPage() {
     }
   };
 
-  // Clear all filters
   const clearFilters = () => {
     setSearch("");
     setDebouncedSearch("");
     setCardFilter("");
     setCategoryFilter("");
     setDateRange("this_month");
-    setSortBy("date_desc");
+    setCustomStartDate("");
+    setCustomEndDate("");
+    setSortColumn("date");
+    setSortDirection("desc");
     setPage(1);
+    setSmartFallbackDone(false);
   };
 
-  // Determine empty state type
   const hasFilters =
     debouncedSearch ||
     cardFilter ||
@@ -323,7 +391,6 @@ export default function TransactionsPage() {
   const isFilteredEmpty = isEmpty && hasFilters;
   const isTotallyEmpty = isEmpty && !hasFilters;
 
-  // Pagination display
   const showingStart = meta ? (meta.page - 1) * meta.per_page + 1 : 0;
   const showingEnd = meta
     ? Math.min(meta.page * meta.per_page, meta.total)
@@ -341,15 +408,50 @@ export default function TransactionsPage() {
     const label = getCardLabel(cards, cardCode);
     if (label.length <= 2) return label.toUpperCase();
     const words = label.split(/\s+/);
-    if (words.length >= 2) {
-      return (words[0][0] + words[1][0]).toUpperCase();
-    }
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
     return label.slice(0, 2).toUpperCase();
   };
 
   const allOnPageSelected =
     transactions.length > 0 && selectedIds.size === transactions.length;
   const someSelected = selectedIds.size > 0;
+
+  // Dropdown options
+  const cardOptions: DropdownOption[] = useMemo(
+    () => [
+      { value: "", label: "All Cards" },
+      ...cards.map((c) => ({ value: c.code, label: c.label })),
+    ],
+    [cards]
+  );
+
+  const categoryOptions: DropdownOption[] = useMemo(
+    () => [
+      { value: "", label: "All Categories" },
+      ...CATEGORIES.map((cat) => ({ value: cat, label: cat })),
+    ],
+    []
+  );
+
+  const dateRangeOptions: DropdownOption[] = useMemo(
+    () => [
+      { value: "this_month", label: "This month" },
+      { value: "last_month", label: "Last month" },
+      { value: "last_3_months", label: "Last 3 months" },
+      { value: "last_6_months", label: "Last 6 months" },
+      { value: "this_year", label: "This year" },
+      { value: "all", label: "All time" },
+      { value: "custom", label: "Custom range" },
+    ],
+    []
+  );
+
+  // Column header style
+  const sortableHeaderStyle = (column: string): React.CSSProperties => ({
+    cursor: "pointer",
+    userSelect: "none",
+    color: sortColumn === column ? theme.accent : undefined,
+  });
 
   return (
     <PageShell
@@ -364,10 +466,10 @@ export default function TransactionsPage() {
         transition={{ duration: 0.4, delay: 0.1 }}
       >
         <ThemedPanel
-          style={{ padding: theme.panelPadding, marginBottom: "24px" }}
+          style={{ padding: theme.panelPadding, marginBottom: "16px" }}
         >
           <div className="flex flex-col gap-3">
-            {/* Search — full width */}
+            {/* Search — full width row 1 */}
             <div style={{ position: "relative" }}>
               <div
                 style={{
@@ -390,69 +492,154 @@ export default function TransactionsPage() {
               />
             </div>
 
-            {/* Filter row */}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <ThemedSelect
+            {/* Filter chips row 2 */}
+            <div className="flex flex-wrap items-center gap-3">
+              <ThemedDropdown
+                options={cardOptions}
                 value={cardFilter}
-                onChange={(e) => {
-                  setCardFilter(e.target.value);
+                onChange={(v) => {
+                  setCardFilter(v);
                   setPage(1);
                 }}
-              >
-                <option value="">All Cards</option>
-                {cards.map((c) => (
-                  <option key={c.id} value={c.code}>
-                    {c.label}
-                  </option>
-                ))}
-              </ThemedSelect>
+                placeholder="All Cards"
+                style={{ minWidth: "160px", flex: "1 1 160px", maxWidth: "220px" }}
+              />
 
-              <ThemedSelect
+              <ThemedDropdown
+                options={categoryOptions}
                 value={categoryFilter}
-                onChange={(e) => {
-                  setCategoryFilter(e.target.value);
+                onChange={(v) => {
+                  setCategoryFilter(v);
                   setPage(1);
                 }}
-              >
-                <option value="">All Categories</option>
-                {CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </ThemedSelect>
+                placeholder="All Categories"
+                style={{ minWidth: "160px", flex: "1 1 160px", maxWidth: "220px" }}
+              />
 
-              <ThemedSelect
+              <ThemedDropdown
+                options={dateRangeOptions}
                 value={dateRange}
-                onChange={(e) => {
-                  setDateRange(e.target.value);
+                onChange={(v) => {
+                  setDateRange(v);
                   setPage(1);
                 }}
-              >
-                <option value="this_month">This month</option>
-                <option value="last_month">Last month</option>
-                <option value="last_3_months">Last 3 months</option>
-                <option value="last_6_months">Last 6 months</option>
-                <option value="this_year">This year</option>
-                <option value="all">All time</option>
-              </ThemedSelect>
+                placeholder="Date Range"
+                style={{ minWidth: "160px", flex: "1 1 160px", maxWidth: "220px" }}
+              />
 
-              <ThemedSelect
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="date_desc">Date (newest)</option>
-                <option value="date_asc">Date (oldest)</option>
-                <option value="amount_desc">Amount (high to low)</option>
-                <option value="amount_asc">Amount (low to high)</option>
-              </ThemedSelect>
+              {hasFilters && (
+                <button
+                  onClick={clearFilters}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: theme.bodyFont,
+                    fontSize: "12px",
+                    color: theme.accent,
+                    padding: "8px 12px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Clear all
+                </button>
+              )}
             </div>
+
+            {/* Custom date range inputs */}
+            {dateRange === "custom" && (
+              <div className="flex items-center gap-3">
+                <ThemedInput
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => {
+                    setCustomStartDate(e.target.value);
+                    setPage(1);
+                  }}
+                  style={{ maxWidth: "180px" }}
+                />
+                <span
+                  style={{
+                    fontFamily: theme.bodyFont,
+                    fontSize: "13px",
+                    color: theme.textMuted,
+                  }}
+                >
+                  to
+                </span>
+                <ThemedInput
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => {
+                    setCustomEndDate(e.target.value);
+                    setPage(1);
+                  }}
+                  style={{ maxWidth: "180px" }}
+                />
+              </div>
+            )}
           </div>
         </ThemedPanel>
       </motion.div>
+
+      {/* Transaction Summary Bar */}
+      {meta && meta.total > 0 && !loading && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.15 }}
+          style={{ marginBottom: "16px" }}
+        >
+          <ThemedPanel style={{ padding: "16px 20px" }}>
+            <div className="flex items-center gap-8">
+              <div>
+                <p
+                  className="text-[10px] uppercase tracking-widest"
+                  style={{ color: theme.textMuted, fontFamily: theme.bodyFont }}
+                >
+                  Total
+                </p>
+                <p
+                  className="font-mono text-lg tabular-nums"
+                  style={{ color: theme.text, fontWeight: 600 }}
+                >
+                  {formatCurrency(meta.total_amount ?? 0)}
+                </p>
+              </div>
+              <div>
+                <p
+                  className="text-[10px] uppercase tracking-widest"
+                  style={{ color: theme.textMuted, fontFamily: theme.bodyFont }}
+                >
+                  Count
+                </p>
+                <p
+                  className="font-mono text-lg tabular-nums"
+                  style={{ color: theme.text, fontWeight: 600 }}
+                >
+                  {meta.total}
+                </p>
+              </div>
+              <div>
+                <p
+                  className="text-[10px] uppercase tracking-widest"
+                  style={{ color: theme.textMuted, fontFamily: theme.bodyFont }}
+                >
+                  Average
+                </p>
+                <p
+                  className="font-mono text-lg tabular-nums"
+                  style={{ color: theme.text, fontWeight: 600 }}
+                >
+                  {formatCurrency(
+                    meta.total > 0 ? (meta.total_amount ?? 0) / meta.total : 0
+                  )}
+                </p>
+              </div>
+            </div>
+          </ThemedPanel>
+        </motion.div>
+      )}
 
       {/* Bulk action bar */}
       <AnimatePresence>
@@ -501,10 +688,7 @@ export default function TransactionsPage() {
                   <ThemedSelect
                     value={bulkCategory}
                     onChange={(e) => setBulkCategory(e.target.value)}
-                    style={{
-                      maxWidth: "180px",
-                      fontSize: "13px",
-                    }}
+                    style={{ maxWidth: "180px", fontSize: "13px" }}
                   >
                     <option value="">Set category...</option>
                     {CATEGORIES.map((cat) => (
@@ -621,7 +805,6 @@ export default function TransactionsPage() {
                         borderBottom: `1px solid ${theme.border}`,
                       }}
                     >
-                      {/* Checkbox header */}
                       <th
                         style={{
                           width: "40px",
@@ -641,14 +824,51 @@ export default function TransactionsPage() {
                           }}
                         />
                       </th>
-                      <ThemedTh className="pr-2 w-[80px]">Date</ThemedTh>
-                      <ThemedTh className="px-2">Description</ThemedTh>
-                      <ThemedTh className="px-2 w-[140px]">
+                      <ThemedTh
+                        className="pr-2 w-[80px]"
+                        style={sortableHeaderStyle("date")}
+                        onClick={() => handleColumnSort("date")}
+                      >
+                        Date
+                        <SortArrow
+                          direction={sortColumn === "date" ? sortDirection : null}
+                          color={theme.accent}
+                        />
+                      </ThemedTh>
+                      <ThemedTh
+                        className="px-2"
+                        style={sortableHeaderStyle("description")}
+                        onClick={() => handleColumnSort("description")}
+                      >
+                        Description
+                        <SortArrow
+                          direction={sortColumn === "description" ? sortDirection : null}
+                          color={theme.accent}
+                        />
+                      </ThemedTh>
+                      <ThemedTh
+                        className="px-2 w-[140px]"
+                        style={sortableHeaderStyle("category")}
+                        onClick={() => handleColumnSort("category")}
+                      >
                         Category
+                        <SortArrow
+                          direction={sortColumn === "category" ? sortDirection : null}
+                          color={theme.accent}
+                        />
                       </ThemedTh>
                       <ThemedTh className="px-2 w-[80px]">Card</ThemedTh>
-                      <ThemedTh numeric className="pl-2 pr-5 w-[100px]">
+                      <ThemedTh
+                        numeric
+                        className="pl-2 pr-5 w-[100px]"
+                        style={sortableHeaderStyle("amount")}
+                        onClick={() => handleColumnSort("amount")}
+                      >
                         Amount
+                        <SortArrow
+                          direction={sortColumn === "amount" ? sortDirection : null}
+                          color={theme.accent}
+                        />
                       </ThemedTh>
                     </tr>
                   </thead>
@@ -701,7 +921,6 @@ export default function TransactionsPage() {
                               }
                             }}
                           >
-                            {/* CHECKBOX */}
                             <td
                               style={{
                                 width: "40px",
@@ -721,7 +940,6 @@ export default function TransactionsPage() {
                               />
                             </td>
 
-                            {/* DATE */}
                             <td
                               className="pr-2 py-3"
                               style={{
@@ -735,7 +953,6 @@ export default function TransactionsPage() {
                               {formatShortDate(txn.date)}
                             </td>
 
-                            {/* DESCRIPTION */}
                             <td
                               className="px-2 py-3"
                               style={{
@@ -779,7 +996,6 @@ export default function TransactionsPage() {
                               </div>
                             </td>
 
-                            {/* CATEGORY */}
                             <td
                               className="px-2 py-3"
                               style={{ width: "140px" }}
@@ -788,15 +1004,9 @@ export default function TransactionsPage() {
                                 {isEditing ? (
                                   <motion.div
                                     key="select"
-                                    initial={{
-                                      scale: 0.95,
-                                      opacity: 0,
-                                    }}
+                                    initial={{ scale: 0.95, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
-                                    exit={{
-                                      scale: 0.95,
-                                      opacity: 0,
-                                    }}
+                                    exit={{ scale: 0.95, opacity: 0 }}
                                     transition={{
                                       type: "spring",
                                       stiffness: 400,
@@ -839,15 +1049,9 @@ export default function TransactionsPage() {
                                 ) : (
                                   <motion.div
                                     key="badge"
-                                    initial={{
-                                      scale: 0.95,
-                                      opacity: 0,
-                                    }}
+                                    initial={{ scale: 0.95, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
-                                    exit={{
-                                      scale: 0.95,
-                                      opacity: 0,
-                                    }}
+                                    exit={{ scale: 0.95, opacity: 0 }}
                                     transition={{
                                       type: "spring",
                                       stiffness: 400,
@@ -864,20 +1068,38 @@ export default function TransactionsPage() {
                                         background: "none",
                                         border: "none",
                                         padding: 0,
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
                                       }}
+                                      className="group"
                                     >
                                       <ThemedBadge
                                         color={categoryColor}
                                       >
                                         {txn.category}
                                       </ThemedBadge>
+                                      <svg
+                                        width="12"
+                                        height="12"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke={theme.textMuted}
+                                        strokeWidth="1.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        style={{ opacity: 0, transition: "opacity 150ms" }}
+                                        className="group-hover:!opacity-60"
+                                      >
+                                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                      </svg>
                                     </button>
                                   </motion.div>
                                 )}
                               </AnimatePresence>
                             </td>
 
-                            {/* CARD */}
                             <td
                               className="px-2 py-3"
                               style={{ whiteSpace: "nowrap" }}
@@ -905,7 +1127,6 @@ export default function TransactionsPage() {
                               </div>
                             </td>
 
-                            {/* AMOUNT */}
                             <td
                               className="pl-2 pr-5 py-3 text-right"
                               style={{
@@ -921,18 +1142,11 @@ export default function TransactionsPage() {
                             </td>
                           </motion.tr>
 
-                          {/* Expanded raw_data row */}
                           <AnimatePresence>
                             {isExpanded && txn.raw_data && (
                               <motion.tr
-                                initial={{
-                                  opacity: 0,
-                                  height: 0,
-                                }}
-                                animate={{
-                                  opacity: 1,
-                                  height: "auto",
-                                }}
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
                                 exit={{ opacity: 0, height: 0 }}
                                 transition={{
                                   duration: 0.25,
@@ -942,10 +1156,7 @@ export default function TransactionsPage() {
                                   borderBottom: `1px solid ${theme.border}`,
                                 }}
                               >
-                                <td
-                                  colSpan={6}
-                                  style={{ padding: 0 }}
-                                >
+                                <td colSpan={6} style={{ padding: 0 }}>
                                   <motion.div
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
@@ -955,8 +1166,7 @@ export default function TransactionsPage() {
                                       delay: 0.05,
                                     }}
                                     style={{
-                                      padding:
-                                        "12px 20px 16px 56px",
+                                      padding: "12px 20px 16px 56px",
                                       backgroundColor:
                                         theme.mode === "dark"
                                           ? "rgba(255,255,255,0.02)"
@@ -971,48 +1181,41 @@ export default function TransactionsPage() {
                                         gap: "6px 24px",
                                       }}
                                     >
-                                      {Object.entries(
-                                        txn.raw_data
-                                      ).map(([key, value]) => (
-                                        <div
-                                          key={key}
-                                          style={{
-                                            display: "flex",
-                                            gap: "8px",
-                                            alignItems:
-                                              "baseline",
-                                          }}
-                                        >
-                                          <span
+                                      {Object.entries(txn.raw_data).map(
+                                        ([key, value]) => (
+                                          <div
+                                            key={key}
                                             style={{
-                                              fontFamily:
-                                                theme.bodyFont,
-                                              fontSize: "12px",
-                                              color:
-                                                theme.textMuted,
-                                              flexShrink: 0,
+                                              display: "flex",
+                                              gap: "8px",
+                                              alignItems: "baseline",
                                             }}
                                           >
-                                            {key}:
-                                          </span>
-                                          <span
-                                            style={{
-                                              fontFamily:
-                                                theme.bodyFont,
-                                              fontSize: "12px",
-                                              color: theme.text,
-                                              overflow:
-                                                "hidden",
-                                              textOverflow:
-                                                "ellipsis",
-                                              whiteSpace:
-                                                "nowrap",
-                                            }}
-                                          >
-                                            {value || "\u2014"}
-                                          </span>
-                                        </div>
-                                      ))}
+                                            <span
+                                              style={{
+                                                fontFamily: theme.bodyFont,
+                                                fontSize: "12px",
+                                                color: theme.textMuted,
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              {key}:
+                                            </span>
+                                            <span
+                                              style={{
+                                                fontFamily: theme.bodyFont,
+                                                fontSize: "12px",
+                                                color: theme.text,
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                              }}
+                                            >
+                                              {value || "\u2014"}
+                                            </span>
+                                          </div>
+                                        )
+                                      )}
                                     </div>
                                   </motion.div>
                                 </td>
@@ -1088,5 +1291,13 @@ export default function TransactionsPage() {
         )}
       </AnimatePresence>
     </PageShell>
+  );
+}
+
+export default function TransactionsPage() {
+  return (
+    <Suspense>
+      <TransactionsPageInner />
+    </Suspense>
   );
 }

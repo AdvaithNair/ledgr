@@ -1,12 +1,13 @@
 use axum::{
-    extract::{Query, State},
-    routing::get,
+    extract::{Path, Query, State},
+    routing::{delete, get},
     Json, Router,
 };
 use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
 use sqlx::PgPool;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 use crate::models::analytics::*;
 use crate::models::import::ImportRecord;
@@ -14,6 +15,7 @@ use crate::models::import::ImportRecord;
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/import-history", get(get_import_history))
+        .route("/import-history/:id", delete(delete_import))
         .route("/stats/summary", get(get_summary))
         .route("/stats/monthly", get(get_monthly))
         .route("/stats/merchants", get(get_merchants))
@@ -75,6 +77,44 @@ async fn get_import_history(State(pool): State<PgPool>) -> Json<serde_json::Valu
     };
 
     Json(serde_json::json!({ "data": records }))
+}
+
+// ── Delete Import ──
+
+async fn delete_import(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Json<serde_json::Value> {
+    // Delete transactions linked to this import
+    let deleted = match sqlx::query_scalar::<_, i64>(
+        "WITH deleted AS (DELETE FROM transactions WHERE import_id = $1 RETURNING 1) SELECT COUNT(*)::bigint FROM deleted",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Failed to delete transactions for import {id}: {e}");
+            0
+        }
+    };
+
+    // Delete the import history record
+    if let Err(e) = sqlx::query("DELETE FROM import_history WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+    {
+        tracing::error!("Failed to delete import history {id}: {e}");
+        return Json(serde_json::json!({ "error": e.to_string() }));
+    }
+
+    Json(serde_json::json!({
+        "data": {
+            "deleted_count": deleted
+        }
+    }))
 }
 
 // ── Enhanced Summary ──

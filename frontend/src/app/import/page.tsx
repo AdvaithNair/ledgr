@@ -20,12 +20,13 @@ import {
   getCards,
   importCSV,
   getImportHistory,
-  getConfig,
-  updateConfig,
+  deleteImport,
 } from "@/lib/api";
 import { getCardColor, getCardLabel } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import type { Card, ImportResult, ImportRecord, UserConfig } from "@/types";
+import { CoverageTracker } from "@/components/coverage-tracker";
+import { getMonthly } from "@/lib/api";
+import type { Card, ImportResult, ImportRecord, MonthlyData } from "@/types";
 
 type ImportState = "idle" | "previewing" | "uploading" | "done";
 
@@ -61,6 +62,9 @@ export default function ImportPage() {
   const [history, setHistory] = useState<ImportRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [dragOver, setDragOver] = useState(false);
+  const [monthlyData, setMonthlyData] = useState<MonthlyData | null>(null);
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // CSV preview state
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([]);
@@ -71,25 +75,13 @@ export default function ImportPage() {
   const [detectedCard, setDetectedCard] = useState<Card | null>(null);
   const [showCardDropdown, setShowCardDropdown] = useState(false);
 
-  // User name config
-  const [userName, setUserName] = useState<string | null>(null);
-  const [userNameInput, setUserNameInput] = useState("");
-  const [editingUserName, setEditingUserName] = useState(false);
-  const [savingUserName, setSavingUserName] = useState(false);
-  const [userNameDismissed, setUserNameDismissed] = useState(false);
-
   useEffect(() => {
     getCards()
       .then((res) => setCards(res.data))
       .catch(() => {});
     fetchHistory();
-    getConfig()
-      .then((res) => {
-        if (res.data.user_name) {
-          setUserName(res.data.user_name);
-          setUserNameInput(res.data.user_name);
-        }
-      })
+    getMonthly()
+      .then((res) => setMonthlyData(res.data))
       .catch(() => {});
   }, []);
 
@@ -102,6 +94,19 @@ export default function ImportPage() {
       // silent
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const handleDeleteImport = async (id: string) => {
+    setDeletingImportId(id);
+    try {
+      await deleteImport(id);
+      setHistory((prev) => prev.filter((r) => r.id !== id));
+      setDeleteConfirmId(null);
+    } catch {
+      // silent
+    } finally {
+      setDeletingImportId(null);
     }
   };
 
@@ -220,20 +225,6 @@ export default function ImportPage() {
     }
   };
 
-  const handleSaveUserName = async () => {
-    if (!userNameInput.trim()) return;
-    setSavingUserName(true);
-    try {
-      await updateConfig({ user_name: userNameInput.trim() });
-      setUserName(userNameInput.trim());
-      setEditingUserName(false);
-    } catch {
-      // silent
-    } finally {
-      setSavingUserName(false);
-    }
-  };
-
   const isAllDuplicates =
     result &&
     result.new_count === 0 &&
@@ -245,165 +236,15 @@ export default function ImportPage() {
       description="Drop a CSV to add transactions"
       maxWidth="lg"
     >
-      {/* ── User Name Config Banner ── */}
-      <AnimatePresence>
-        {!userNameDismissed && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{ marginBottom: "16px", overflow: "hidden" }}
-          >
-            {!userName || editingUserName ? (
-              <ThemedPanel
-                style={{
-                  padding: "16px 20px",
-                  borderLeft: `3px solid ${theme.accent}`,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "12px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ flex: "1 1 auto", minWidth: "200px" }}>
-                    <p
-                      style={{
-                        fontFamily: theme.bodyFont,
-                        fontSize: "13px",
-                        color: theme.text,
-                        marginBottom: "8px",
-                      }}
-                    >
-                      {userName
-                        ? "Update your name"
-                        : "Set your name to filter out other cardholders\u2019 transactions"}
-                    </p>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <ThemedInput
-                        value={userNameInput}
-                        onChange={(e) => setUserNameInput(e.target.value)}
-                        placeholder="Your name"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveUserName();
-                          if (e.key === "Escape") {
-                            setEditingUserName(false);
-                            setUserNameInput(userName || "");
-                          }
-                        }}
-                        style={{ maxWidth: "220px" }}
-                      />
-                      <ThemedButton
-                        variant="primary"
-                        size="sm"
-                        loading={savingUserName}
-                        onClick={handleSaveUserName}
-                      >
-                        Save
-                      </ThemedButton>
-                      {userName && (
-                        <ThemedButton
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditingUserName(false);
-                            setUserNameInput(userName);
-                          }}
-                        >
-                          Cancel
-                        </ThemedButton>
-                      )}
-                    </div>
-                  </div>
-                  {!userName && (
-                    <button
-                      onClick={() => setUserNameDismissed(true)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        color: theme.textMuted,
-                        padding: "4px",
-                        fontSize: "16px",
-                        lineHeight: 1,
-                      }}
-                      aria-label="Dismiss"
-                    >
-                      &times;
-                    </button>
-                  )}
-                </div>
-              </ThemedPanel>
-            ) : (
-              <ThemedPanel style={{ padding: "12px 20px" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                  }}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke={theme.accent}
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                  <span
-                    style={{
-                      fontFamily: theme.bodyFont,
-                      fontSize: "13px",
-                      color: theme.textMuted,
-                    }}
-                  >
-                    Filtering for:{" "}
-                    <span style={{ color: theme.text, fontWeight: 500 }}>
-                      {userName}
-                    </span>
-                  </span>
-                  <button
-                    onClick={() => setEditingUserName(true)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontFamily: theme.bodyFont,
-                      fontSize: "12px",
-                      color: theme.accent,
-                      padding: "2px 6px",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    Edit
-                  </button>
-                </div>
-              </ThemedPanel>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* ── Drop Zone (only visible when idle) ── */}
       <AnimatePresence mode="wait">
         {state === "idle" && (
           <motion.div
             key="dropzone"
             initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0, scale: dragOver ? 1.01 : 1 }}
+            animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
             <ThemedPanel style={{ padding: theme.panelPadding }}>
               <div
@@ -935,6 +776,22 @@ export default function ImportPage() {
         )}
       </AnimatePresence>
 
+      {/* ── Coverage Tracker ── */}
+      {cards.length > 0 && monthlyData && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          style={{ marginTop: "24px" }}
+        >
+          <ThemedLabel className="mb-4">Data Coverage</ThemedLabel>
+          <ThemedPanel style={{ padding: theme.panelPadding }}>
+            <CoverageTracker cards={cards} monthlyData={monthlyData} />
+          </ThemedPanel>
+        </motion.div>
+      )}
+
       {/* ── Import History ── */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -997,6 +854,7 @@ export default function ImportPage() {
                   <ThemedTh>Date</ThemedTh>
                   <ThemedTh numeric>Txns</ThemedTh>
                   <ThemedTh numeric>Duplicates</ThemedTh>
+                  <ThemedTh>{" "}</ThemedTh>
                 </tr>
               </thead>
               <tbody>
@@ -1072,6 +930,86 @@ export default function ImportPage() {
                     </ThemedTd>
                     <ThemedTd numeric>
                       {record.duplicate_count}
+                    </ThemedTd>
+                    <ThemedTd>
+                      {deleteConfirmId === record.id ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <button
+                            onClick={() => handleDeleteImport(record.id)}
+                            disabled={deletingImportId === record.id}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              fontFamily: theme.bodyFont,
+                              fontSize: "11px",
+                              color: theme.danger,
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              opacity: deletingImportId === record.id ? 0.5 : 1,
+                            }}
+                          >
+                            {deletingImportId === record.id
+                              ? "..."
+                              : `Delete ${record.transaction_count} txns`}
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(null)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              fontFamily: theme.bodyFont,
+                              fontSize: "11px",
+                              color: theme.textMuted,
+                              padding: "2px 4px",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeleteConfirmId(record.id)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: theme.textMuted,
+                            padding: "4px",
+                            borderRadius: "4px",
+                            opacity: 0.5,
+                            transition: "opacity 150ms",
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLElement).style.opacity = "1";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.opacity = "0.5";
+                          }}
+                          title="Delete import"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      )}
                     </ThemedTd>
                   </motion.tr>
                 ))}

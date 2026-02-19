@@ -1,0 +1,1 @@
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_id UUID REFERENCES import_history(id) ON DELETE SET NULL;

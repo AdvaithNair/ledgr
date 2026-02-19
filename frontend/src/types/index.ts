@@ -61,6 +61,7 @@ export interface PaginationMeta {
   per_page: number;
   total: number;
   total_pages: number;
+  total_amount?: number;
 }
 
 export interface TransactionsResponse {
@@ -162,11 +163,11 @@ export interface ForecastData {
   };
   vs_last_month: {
     last_month_total: number;
-    projected_change_pct: number;
+    projected_diff_pct: number;
   };
   vs_average: {
     avg_monthly: number;
-    projected_change_pct: number;
+    projected_diff_pct: number;
   };
   category_forecasts: Array<{
     category: string;

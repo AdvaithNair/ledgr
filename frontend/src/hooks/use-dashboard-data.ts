@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   getSummary,
   getMonthly,
@@ -13,6 +13,8 @@ import {
   getHabits,
   getDaily,
   getBudgetProgress,
+  getTransactions,
+  getImportHistory,
 } from "@/lib/api";
 import {
   TEST_SUMMARY,
@@ -38,6 +40,8 @@ import type {
   HabitAnalysis,
   DailySpending,
   BudgetProgress,
+  Transaction,
+  ImportRecord,
 } from "@/types";
 
 interface DashboardData {
@@ -52,17 +56,19 @@ interface DashboardData {
   habits: HabitAnalysis | null;
   daily: DailySpending[] | null;
   budgetProgress: BudgetProgress[];
+  recentTransactions: Transaction[];
+  lastImport: ImportRecord | null;
   loading: boolean;
   error: string | null;
-  useTestData: boolean;
-  toggleTestData: () => void;
 }
+
+const isDev = process.env.NODE_ENV === "development";
 
 export function useDashboardData(): DashboardData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useTestData, setUseTestData] = useState(false);
-  const [data, setData] = useState<Omit<DashboardData, "loading" | "error" | "useTestData" | "toggleTestData">>({
+  const [data, setData] = useState<Omit<DashboardData, "loading" | "error">>({
     summary: null,
     monthly: null,
     merchants: null,
@@ -74,10 +80,12 @@ export function useDashboardData(): DashboardData {
     habits: null,
     daily: null,
     budgetProgress: [],
+    recentTransactions: [],
+    lastImport: null,
   });
 
   useEffect(() => {
-    if (useTestData) {
+    if (isDev && useTestData) {
       setData({
         summary: TEST_SUMMARY,
         monthly: TEST_MONTHLY,
@@ -90,6 +98,8 @@ export function useDashboardData(): DashboardData {
         habits: TEST_HABITS,
         daily: TEST_DAILY,
         budgetProgress: [],
+        recentTransactions: [],
+        lastImport: null,
       });
       setLoading(false);
       setError(null);
@@ -109,6 +119,8 @@ export function useDashboardData(): DashboardData {
       getHabits(),
       getDaily(),
       getBudgetProgress().catch(() => ({ data: [] as BudgetProgress[] })),
+      getTransactions({ per_page: "5", sort_by: "date", sort_order: "desc" }).catch(() => ({ data: [], meta: { page: 1, per_page: 5, total: 0, total_pages: 0 } })),
+      getImportHistory().catch(() => ({ data: [] as ImportRecord[] })),
     ])
       .then(
         ([
@@ -123,6 +135,8 @@ export function useDashboardData(): DashboardData {
           habits,
           daily,
           budgetProg,
+          recentTxns,
+          importHist,
         ]) => {
           setData({
             summary: summary.data as EnhancedSummaryStats,
@@ -136,6 +150,8 @@ export function useDashboardData(): DashboardData {
             habits: habits.data,
             daily: daily.data,
             budgetProgress: budgetProg.data,
+            recentTransactions: recentTxns.data,
+            lastImport: importHist.data.length > 0 ? importHist.data[0] : null,
           });
         }
       )
@@ -146,9 +162,5 @@ export function useDashboardData(): DashboardData {
       .finally(() => setLoading(false));
   }, [useTestData]);
 
-  const toggleTestData = useCallback(() => {
-    setUseTestData((prev) => !prev);
-  }, []);
-
-  return { ...data, loading, error, useTestData, toggleTestData };
+  return { ...data, loading, error };
 }

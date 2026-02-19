@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart,
@@ -70,7 +71,7 @@ const TABS: TabDef[] = [
   { id: "patterns", label: "Patterns" },
   { id: "subscriptions", label: "Subscriptions" },
   { id: "forecast", label: "Forecast" },
-  { id: "yoy", label: "Year-over-Year" },
+  { id: "yoy", label: "Compare" },
 ];
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -1228,7 +1229,7 @@ function ForecastTab({
   const projected = data.projections.recommended;
   const avgMonthly = data.vs_average.avg_monthly;
   const diff = projected - avgMonthly;
-  const diffPct = data.vs_average.projected_change_pct;
+  const diffPct = data.vs_average.projected_diff_pct ?? 0;
   const diffColor =
     diff > 0 ? theme.danger : diff < 0 ? theme.success : theme.textMuted;
 
@@ -2050,8 +2051,12 @@ function CategoryDeepDiveModal({
 // MAIN PAGE
 // ═══════════════════════════════════════════
 
-export default function AnalyticsPage() {
+const VALID_TABS: TabId[] = ["habits", "patterns", "subscriptions", "forecast", "yoy"];
+
+function AnalyticsPageInner() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabId>("habits");
+  const initializedRef = useRef(false);
 
   // Data states
   const [habits, setHabits] = useState<HabitAnalysis | null>(null);
@@ -2094,6 +2099,23 @@ export default function AnalyticsPage() {
     setSelectedCategory(null);
     setCategoryData(null);
   }, []);
+
+  // Parse URL params on mount
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const urlTab = searchParams.get("tab");
+    const urlCategory = searchParams.get("category");
+
+    if (urlTab && VALID_TABS.includes(urlTab as TabId)) {
+      setActiveTab(urlTab as TabId);
+    }
+    if (urlCategory) {
+      // Will open deep dive after data loads
+      openCategoryDeepDive(urlCategory);
+    }
+  }, [searchParams, openCategoryDeepDive]);
 
   // Fetch data for active tab
   const fetchTabData = useCallback(async (tab: TabId) => {
@@ -2250,5 +2272,13 @@ export default function AnalyticsPage() {
         )}
       </AnimatePresence>
     </PageShell>
+  );
+}
+
+export default function AnalyticsPage() {
+  return (
+    <Suspense>
+      <AnalyticsPageInner />
+    </Suspense>
   );
 }

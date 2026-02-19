@@ -329,12 +329,13 @@ export function ThemedTable({ children, className }: { children: ReactNode; clas
   );
 }
 
-export function ThemedTh({ children, className, numeric }: { children: ReactNode; className?: string; numeric?: boolean }) {
+export function ThemedTh({ children, className, numeric, style, onClick }: { children: ReactNode; className?: string; numeric?: boolean; style?: React.CSSProperties; onClick?: () => void }) {
   const { theme } = useTheme();
   return (
     <th
       className={cn("py-3 text-left text-[10px] uppercase tracking-widest font-normal", numeric && "text-right", className)}
-      style={{ color: theme.labelColor, fontFamily: theme.bodyFont }}
+      style={{ color: theme.labelColor, fontFamily: theme.bodyFont, ...style }}
+      onClick={onClick}
     >
       {children}
     </th>

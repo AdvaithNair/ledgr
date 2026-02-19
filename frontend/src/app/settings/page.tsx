@@ -6,6 +6,8 @@ import { PageShell } from "@/components/page-shell";
 import { ThemedPanel, ThemedLabel } from "@/components/dashboards/themed-components";
 import { ThemedButton } from "@/components/ui/themed-button";
 import { ThemedInput } from "@/components/ui/themed-input";
+import { ThemedDropdown, type DropdownOption } from "@/components/ui/themed-dropdown";
+import { ThemedColorPicker } from "@/components/ui/themed-color-picker";
 import { ThemedSkeleton } from "@/components/ui/themed-skeleton";
 import { useTheme, type ThemeStyle, type ThemeMode } from "@/components/theme-provider";
 import {
@@ -49,7 +51,92 @@ const fadeVariants = {
 };
 
 // ── Blank card form state ──
-const emptyForm = { label: "", code: "", color: "#7DD3FC" };
+const emptyForm = {
+  label: "",
+  code: "",
+  color: "#7DD3FC",
+  header_pattern: "",
+  date_column: "",
+  date_format: "",
+  description_column: "",
+  amount_column: "",
+  debit_column: "",
+  credit_column: "",
+  category_column: "",
+  member_column: "",
+  skip_negative_amounts: false,
+};
+
+type CardForm = typeof emptyForm;
+
+// ── Info tooltip ──
+function InfoTooltip({ text, theme: t }: { text: string; theme: { textMuted: string; bg: string; border: string; bodyFont: string; mode: string } }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ display: "inline-block", position: "relative", marginLeft: "4px", verticalAlign: "middle" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "0",
+          width: "14px",
+          height: "14px",
+          borderRadius: "50%",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "9px",
+          fontWeight: 700,
+          color: t.textMuted,
+          outline: `1px solid ${t.textMuted}`,
+          opacity: 0.6,
+          transition: "opacity 150ms",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.6"; }}
+      >
+        i
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            backgroundColor: t.bg,
+            border: `1px solid ${t.border}`,
+            boxShadow: t.mode === "dark" ? "0 4px 16px rgba(0,0,0,0.5)" : "0 4px 16px rgba(0,0,0,0.1)",
+            fontSize: "12px",
+            fontFamily: t.bodyFont,
+            color: t.textMuted,
+            lineHeight: "1.5",
+            whiteSpace: "normal",
+            width: "220px",
+            zIndex: 10,
+          }}
+        >
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Color swatch preview ──
 function ColorSwatch({ color, borderColor }: { color: string; borderColor: string }) {
@@ -286,7 +373,21 @@ export default function SettingsPage() {
   const handleEditCard = (card: Card) => {
     setAddingNew(false);
     setEditingId(card.id);
-    setEditForm({ label: card.label, code: card.code, color: card.color });
+    setEditForm({
+      label: card.label,
+      code: card.code,
+      color: card.color,
+      header_pattern: card.header_pattern ?? "",
+      date_column: card.date_column ?? "",
+      date_format: card.date_format ?? "",
+      description_column: card.description_column ?? "",
+      amount_column: card.amount_column ?? "",
+      debit_column: card.debit_column ?? "",
+      credit_column: card.credit_column ?? "",
+      category_column: card.category_column ?? "",
+      member_column: card.member_column ?? "",
+      skip_negative_amounts: card.skip_negative_amounts,
+    });
   };
 
   const handleCancelEdit = () => {
@@ -299,18 +400,25 @@ export default function SettingsPage() {
     if (!editForm.label.trim() || !editForm.code.trim()) return;
     setSavingCard(true);
     try {
+      const mappingFields = {
+        code: editForm.code.trim(),
+        label: editForm.label.trim(),
+        color: editForm.color.trim(),
+        ...(editForm.header_pattern ? { header_pattern: editForm.header_pattern.trim() } : {}),
+        ...(editForm.date_column ? { date_column: editForm.date_column.trim() } : {}),
+        ...(editForm.date_format ? { date_format: editForm.date_format.trim() } : {}),
+        ...(editForm.description_column ? { description_column: editForm.description_column.trim() } : {}),
+        ...(editForm.amount_column ? { amount_column: editForm.amount_column.trim() } : {}),
+        ...(editForm.debit_column ? { debit_column: editForm.debit_column.trim() } : {}),
+        ...(editForm.credit_column ? { credit_column: editForm.credit_column.trim() } : {}),
+        ...(editForm.category_column ? { category_column: editForm.category_column.trim() } : {}),
+        ...(editForm.member_column ? { member_column: editForm.member_column.trim() } : {}),
+        skip_negative_amounts: editForm.skip_negative_amounts,
+      };
       if (addingNew) {
-        await createCard({
-          code: editForm.code.trim(),
-          label: editForm.label.trim(),
-          color: editForm.color.trim(),
-        });
+        await createCard(mappingFields);
       } else if (editingId) {
-        await updateCard(editingId, {
-          code: editForm.code.trim(),
-          label: editForm.label.trim(),
-          color: editForm.color.trim(),
-        });
+        await updateCard(editingId, mappingFields);
       }
       handleCancelEdit();
       fetchCards();
@@ -360,6 +468,15 @@ export default function SettingsPage() {
     }
   };
 
+  // ── CSV mapping fields expand state ──
+  const [mappingExpanded, setMappingExpanded] = useState(false);
+
+  // Auto-expand mapping for new cards
+  useEffect(() => {
+    if (addingNew) setMappingExpanded(true);
+    else setMappingExpanded(false);
+  }, [addingNew, editingId]);
+
   // ── Card form (shared by edit and add) ──
   const renderCardForm = () => (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px", paddingTop: "12px" }}>
@@ -381,46 +498,201 @@ export default function SettingsPage() {
           placeholder="e.g. Amex Gold"
         />
       </div>
-      <div>
-        <label
-          style={{
-            fontFamily: theme.bodyFont,
-            fontSize: "12px",
-            color: theme.textMuted,
-            marginBottom: "4px",
-            display: "block",
-          }}
-        >
-          Code
-        </label>
-        <ThemedInput
-          value={editForm.code}
-          onChange={(e) => setEditForm((f) => ({ ...f, code: e.target.value }))}
-          placeholder="e.g. amex"
-        />
-      </div>
-      <div>
-        <label
-          style={{
-            fontFamily: theme.bodyFont,
-            fontSize: "12px",
-            color: theme.textMuted,
-            marginBottom: "4px",
-            display: "block",
-          }}
-        >
-          Color
-        </label>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        <div>
+          <label
+            style={{
+              fontFamily: theme.bodyFont,
+              fontSize: "12px",
+              color: theme.textMuted,
+              marginBottom: "4px",
+              display: "block",
+            }}
+          >
+            Code
+            <InfoTooltip text="Short identifier used to match this card during CSV import. Must be unique." theme={theme} />
+          </label>
           <ThemedInput
-            value={editForm.color}
-            onChange={(e) => setEditForm((f) => ({ ...f, color: e.target.value }))}
-            placeholder="#C5A44E"
-            style={{ flex: 1 }}
+            value={editForm.code}
+            onChange={(e) => setEditForm((f) => ({ ...f, code: e.target.value }))}
+            placeholder="e.g. amex"
           />
-          <ColorSwatch color={editForm.color} borderColor={theme.border} />
+        </div>
+        <div>
+          <label
+            style={{
+              fontFamily: theme.bodyFont,
+              fontSize: "12px",
+              color: theme.textMuted,
+              marginBottom: "4px",
+              display: "block",
+            }}
+          >
+            Color
+          </label>
+          <ThemedColorPicker
+            value={editForm.color}
+            onChange={(color) => setEditForm((f) => ({ ...f, color }))}
+          />
         </div>
       </div>
+
+      {/* CSV Mapping Fields — expandable */}
+      <div>
+        <button
+          onClick={() => setMappingExpanded(!mappingExpanded)}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "0",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            fontFamily: theme.bodyFont,
+            fontSize: "12px",
+            color: theme.textMuted,
+            transition: "color 150ms",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = theme.text; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = theme.textMuted; }}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            style={{
+              transform: mappingExpanded ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 150ms ease",
+            }}
+          >
+            <path d="M4 2l4 4-4 4" />
+          </svg>
+          CSV Column Mapping
+        </button>
+
+        <AnimatePresence>
+          {mappingExpanded && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, overflow: "hidden" }}
+              animate={{ opacity: 1, height: "auto", overflow: "hidden", transition: { duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] } }}
+              exit={{ opacity: 0, height: 0, overflow: "hidden", transition: { duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] } }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "10px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>
+                      Header Pattern
+                      <InfoTooltip text="A unique string found in the CSV header row to auto-detect this card type. E.g. &quot;Transaction Date&quot; for Capital One." theme={theme} />
+                    </label>
+                    <ThemedInput
+                      value={editForm.header_pattern}
+                      onChange={(e) => setEditForm((f) => ({ ...f, header_pattern: e.target.value }))}
+                      placeholder="e.g. Transaction Date"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>
+                      Date Format
+                      <InfoTooltip text="strftime format for parsing dates. Leave empty for auto-detection. E.g. &quot;%m/%d/%Y&quot; for 01/15/2025." theme={theme} />
+                    </label>
+                    <ThemedInput
+                      value={editForm.date_format}
+                      onChange={(e) => setEditForm((f) => ({ ...f, date_format: e.target.value }))}
+                      placeholder="e.g. %m/%d/%Y"
+                    />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>Date Column</label>
+                    <ThemedInput
+                      value={editForm.date_column}
+                      onChange={(e) => setEditForm((f) => ({ ...f, date_column: e.target.value }))}
+                      placeholder="e.g. Date"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>Description Column</label>
+                    <ThemedInput
+                      value={editForm.description_column}
+                      onChange={(e) => setEditForm((f) => ({ ...f, description_column: e.target.value }))}
+                      placeholder="e.g. Description"
+                    />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>Amount Column</label>
+                    <ThemedInput
+                      value={editForm.amount_column}
+                      onChange={(e) => setEditForm((f) => ({ ...f, amount_column: e.target.value }))}
+                      placeholder="e.g. Amount"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>Debit Column</label>
+                    <ThemedInput
+                      value={editForm.debit_column}
+                      onChange={(e) => setEditForm((f) => ({ ...f, debit_column: e.target.value }))}
+                      placeholder="e.g. Debit"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>Credit Column</label>
+                    <ThemedInput
+                      value={editForm.credit_column}
+                      onChange={(e) => setEditForm((f) => ({ ...f, credit_column: e.target.value }))}
+                      placeholder="e.g. Credit"
+                    />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>Category Column</label>
+                    <ThemedInput
+                      value={editForm.category_column}
+                      onChange={(e) => setEditForm((f) => ({ ...f, category_column: e.target.value }))}
+                      placeholder="e.g. Category"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: theme.bodyFont, fontSize: "11px", color: theme.textMuted, marginBottom: "3px", display: "block" }}>Member Column</label>
+                    <ThemedInput
+                      value={editForm.member_column}
+                      onChange={(e) => setEditForm((f) => ({ ...f, member_column: e.target.value }))}
+                      placeholder="e.g. Member Name"
+                    />
+                  </div>
+                </div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    fontFamily: theme.bodyFont,
+                    fontSize: "12px",
+                    color: theme.textMuted,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={editForm.skip_negative_amounts}
+                    onChange={(e) => setEditForm((f) => ({ ...f, skip_negative_amounts: e.target.checked }))}
+                    style={{ accentColor: theme.accent }}
+                  />
+                  Skip negative amounts (payments/credits)
+                </label>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
         <ThemedButton
           variant="primary"
@@ -829,29 +1101,16 @@ export default function SettingsPage() {
                         flexWrap: "wrap",
                       }}
                     >
-                      <select
+                      <ThemedDropdown
+                        options={[
+                          { value: "", label: "Select category" },
+                          ...availableCategories.map((cat) => ({ value: cat, label: cat })),
+                        ]}
                         value={budgetCategory}
-                        onChange={(e) => setBudgetCategory(e.target.value)}
-                        style={{
-                          fontFamily: theme.bodyFont,
-                          fontSize: "13px",
-                          color: theme.text,
-                          backgroundColor: theme.surface,
-                          border: `1px solid ${theme.border}`,
-                          borderRadius: "10px",
-                          padding: "8px 12px",
-                          appearance: "none",
-                          cursor: "pointer",
-                          minWidth: "140px",
-                        }}
-                      >
-                        <option value="">Select category</option>
-                        {availableCategories.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setBudgetCategory}
+                        placeholder="Select category"
+                        style={{ minWidth: "160px" }}
+                      />
 
                       <div style={{ position: "relative", width: "100px" }}>
                         <span
@@ -1000,76 +1259,90 @@ export default function SettingsPage() {
           <ThemedLabel className="mb-3">Theme</ThemedLabel>
           <ThemedPanel>
             <div style={{ padding: theme.panelPadding }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {/* Style toggle */}
-                <div>
-                  <p
-                    style={{
-                      fontFamily: theme.bodyFont,
-                      fontSize: "12px",
-                      color: theme.textMuted,
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Style
-                  </p>
-                  <PillToggle
-                    options={[
-                      { label: "Arctic", value: "arctic" as ThemeStyle },
-                      { label: "Paper", value: "paper" as ThemeStyle },
-                    ]}
-                    value={style}
-                    onChange={setStyle}
-                    font={theme.bodyFont}
-                    border={theme.border}
-                    accentMuted={theme.accentMuted}
-                    accent={theme.accent}
-                    textMuted={theme.textMuted}
-                  />
-                </div>
-
-                {/* Mode toggle */}
-                <div>
-                  <p
-                    style={{
-                      fontFamily: theme.bodyFont,
-                      fontSize: "12px",
-                      color: theme.textMuted,
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Mode
-                  </p>
-                  <PillToggle
-                    options={[
-                      { label: "Dark", value: "dark" as ThemeMode },
-                      { label: "Light", value: "light" as ThemeMode },
-                    ]}
-                    value={mode}
-                    onChange={setMode}
-                    font={theme.bodyFont}
-                    border={theme.border}
-                    accentMuted={theme.accentMuted}
-                    accent={theme.accent}
-                    textMuted={theme.textMuted}
-                  />
-                </div>
-
-                {/* Current theme label */}
-                <p
-                  style={{
-                    fontFamily: theme.bodyFont,
-                    fontSize: "12px",
-                    color: theme.textMuted,
-                    marginTop: "4px",
-                  }}
-                >
-                  Currently using{" "}
-                  <span style={{ color: theme.accent, fontWeight: 500 }}>
-                    {style.charAt(0).toUpperCase() + style.slice(1)}{" "}
-                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                  </span>
-                </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "12px",
+                }}
+              >
+                {(
+                  [
+                    { s: "arctic" as ThemeStyle, m: "dark" as ThemeMode, label: "Arctic Dark", bg: "#0A0A0F", surface: "#141419", accent: "#7DD3FC" },
+                    { s: "arctic" as ThemeStyle, m: "light" as ThemeMode, label: "Arctic Light", bg: "#F8FAFC", surface: "#FFFFFF", accent: "#0EA5E9" },
+                    { s: "paper" as ThemeStyle, m: "dark" as ThemeMode, label: "Paper Dark", bg: "#1A1A1A", surface: "#242424", accent: "#D4A574" },
+                    { s: "paper" as ThemeStyle, m: "light" as ThemeMode, label: "Paper Light", bg: "#FAF8F5", surface: "#FFFFFF", accent: "#8B6914" },
+                  ] as const
+                ).map((t) => {
+                  const isActive = style === t.s && mode === t.m;
+                  return (
+                    <button
+                      key={`${t.s}-${t.m}`}
+                      onClick={() => {
+                        setStyle(t.s);
+                        setMode(t.m);
+                      }}
+                      style={{
+                        cursor: "pointer",
+                        border: isActive
+                          ? `2px solid ${theme.accent}`
+                          : `1px solid ${theme.border}`,
+                        borderRadius: "12px",
+                        padding: "16px",
+                        backgroundColor: t.bg,
+                        transition: "border-color 200ms",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "6px",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "24px",
+                            height: "14px",
+                            borderRadius: "4px",
+                            backgroundColor: t.surface,
+                          }}
+                        />
+                        <div
+                          style={{
+                            width: "14px",
+                            height: "14px",
+                            borderRadius: "4px",
+                            backgroundColor: t.accent,
+                          }}
+                        />
+                      </div>
+                      <p
+                        style={{
+                          fontFamily: theme.bodyFont,
+                          fontSize: "13px",
+                          fontWeight: 500,
+                          color: t.m === "dark" ? "#E5E5E5" : "#1A1A1A",
+                        }}
+                      >
+                        {t.label}
+                      </p>
+                      {isActive && (
+                        <p
+                          style={{
+                            fontFamily: theme.bodyFont,
+                            fontSize: "10px",
+                            color: t.accent,
+                            marginTop: "4px",
+                          }}
+                        >
+                          Active
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </ThemedPanel>

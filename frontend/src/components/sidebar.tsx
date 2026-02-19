@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { getImportHistory } from "@/lib/api";
 import {
   useTheme,
   ARCTIC_DARK,
@@ -261,6 +262,24 @@ export function Sidebar() {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const { theme, style, mode, setStyle, setMode } = useTheme();
   const pickerRef = useRef<HTMLDivElement>(null);
+  const [lastImportDaysAgo, setLastImportDaysAgo] = useState<number | null>(null);
+
+  // Fetch last import freshness
+  useEffect(() => {
+    getImportHistory()
+      .then((res) => {
+        if (res.data.length > 0) {
+          const sorted = [...res.data].sort(
+            (a, b) => new Date(b.imported_at).getTime() - new Date(a.imported_at).getTime()
+          );
+          const daysAgo = Math.floor(
+            (Date.now() - new Date(sorted[0].imported_at).getTime()) / (1000 * 60 * 60 * 24)
+          );
+          setLastImportDaysAgo(daysAgo);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   function isActive(item: (typeof navItems)[0]) {
     if (item.matchPaths) return item.matchPaths.some((p) => pathname === p);
@@ -374,6 +393,47 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Import freshness indicator */}
+      {lastImportDaysAgo !== null && (
+        <Link
+          href="/import"
+          className="mx-3 mb-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors"
+          style={{ color: theme.textMuted }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = theme.text; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = theme.textMuted; }}
+          title={collapsed ? `Last import: ${lastImportDaysAgo === 0 ? "today" : `${lastImportDaysAgo}d ago`}` : undefined}
+        >
+          <span
+            className="h-2 w-2 flex-shrink-0 rounded-full"
+            style={{
+              backgroundColor:
+                lastImportDaysAgo <= 7
+                  ? theme.success
+                  : lastImportDaysAgo <= 14
+                    ? theme.accent
+                    : theme.danger,
+            }}
+          />
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="whitespace-nowrap"
+              >
+                {lastImportDaysAgo === 0
+                  ? "Imported today"
+                  : lastImportDaysAgo === 1
+                    ? "Imported yesterday"
+                    : `Last import: ${lastImportDaysAgo}d ago`}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </Link>
+      )}
 
       {/* Bottom — theme picker trigger */}
       <div

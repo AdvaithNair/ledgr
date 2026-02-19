@@ -18,10 +18,10 @@ export default function DashboardPage() {
     merchants,
     cards,
     budgetProgress,
+    recentTransactions,
+    lastImport,
     loading,
     error,
-    useTestData,
-    toggleTestData,
   } = useDashboardData();
 
   return (
@@ -39,7 +39,6 @@ export default function DashboardPage() {
             error || "Import some transactions to see your dashboard."
           }
           action={{ label: "Import CSV", href: "/import" }}
-          secondaryAction={{ label: "Use Test Data", onClick: toggleTestData }}
         />
       ) : (
         <Meridian
@@ -54,6 +53,8 @@ export default function DashboardPage() {
           merchants={merchants}
           cards={cards}
           budgetProgress={budgetProgress}
+          recentTransactions={recentTransactions}
+          lastImport={lastImport}
         />
       )}
     </div>

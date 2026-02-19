@@ -132,6 +132,12 @@ export async function getImportHistory(): Promise<{ data: ImportRecord[] }> {
   return fetcher("/import-history");
 }
 
+export async function deleteImport(
+  id: string
+): Promise<{ data: { deleted_count: number } }> {
+  return fetcher(`/import-history/${id}`, { method: "DELETE" });
+}
+
 // ── Stats ──
 
 export async function getSummary(): Promise<{ data: SummaryStats }> {

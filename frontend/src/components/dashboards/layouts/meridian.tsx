@@ -13,6 +13,7 @@ import {
   ComposedChart,
   Legend,
 } from "recharts";
+import Link from "next/link";
 import { useTheme } from "@/components/theme-provider";
 import {
   ThemedBackground,
@@ -35,6 +36,8 @@ import type {
   EnhancedMerchant,
   Card,
   BudgetProgress,
+  Transaction,
+  ImportRecord,
 } from "@/types";
 
 export interface DashboardLayoutProps {
@@ -49,6 +52,8 @@ export interface DashboardLayoutProps {
   merchants: EnhancedMerchant[] | null;
   cards: Card[];
   budgetProgress?: BudgetProgress[];
+  recentTransactions?: Transaction[];
+  lastImport?: ImportRecord | null;
 }
 
 // ── Icon map for insights ──
@@ -180,9 +185,12 @@ export function Meridian({
   anomalies,
   recurring,
   insights,
+  habits,
   merchants,
   cards,
   budgetProgress,
+  recentTransactions,
+  lastImport,
 }: DashboardLayoutProps) {
   const { theme } = useTheme();
   const tooltipStyle = useTooltipStyle();
@@ -326,7 +334,7 @@ export function Meridian({
   // Velocity card color logic
   const velocityBarColor = useMemo(() => {
     if (!forecast) return theme.success;
-    const changePct = forecast.vs_average.projected_change_pct;
+    const changePct = forecast.vs_average.projected_diff_pct ?? 0;
     if (changePct > 10) return theme.danger;
     if (changePct > 0) return theme.accent;
     return theme.success;
@@ -628,7 +636,7 @@ export function Meridian({
                   className="mt-0.5 font-mono text-[13px] font-medium"
                   style={{
                     color:
-                      forecast.vs_average.projected_change_pct > 0
+                      (forecast.vs_average.projected_diff_pct ?? 0) > 0
                         ? theme.danger
                         : theme.success,
                   }}
@@ -639,30 +647,6 @@ export function Meridian({
             )}
           </motion.div>
 
-          {/* Scroll indicator */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1, delay: 0.8 }}
-            className="mt-16 flex items-center justify-center gap-1"
-          >
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
-                animate={{ opacity: [0.15, 0.5, 0.15] }}
-                transition={{
-                  duration: 2.4,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: i * 0.3,
-                }}
-                className="h-[3px] w-[3px] rounded-full"
-                style={{
-                  backgroundColor: theme.accent,
-                }}
-              />
-            ))}
-          </motion.div>
         </div>
 
         {/* ════════════════════════════════════════════════════════
@@ -872,12 +856,12 @@ export function Meridian({
                     className="font-mono text-[11px] tabular-nums"
                     style={{
                       color: sentimentColor(
-                        forecast.vs_average?.projected_change_pct ?? 0
+                        forecast.vs_average?.projected_diff_pct ?? 0
                       ),
                     }}
                   >
-                    {(forecast.vs_average?.projected_change_pct ?? 0) > 0 ? "+" : ""}
-                    {fmt(forecast.vs_average?.projected_change_pct)}%
+                    {(forecast.vs_average?.projected_diff_pct ?? 0) > 0 ? "+" : ""}
+                    {fmt(forecast.vs_average?.projected_diff_pct)}%
                   </span>
                 </div>
                 <ProgressBar
@@ -1166,15 +1150,17 @@ export function Meridian({
                       return (
                         <div key={cat.category}>
                           <div className="flex items-baseline justify-between">
-                            <span
-                              className="text-[13px]"
+                            <Link
+                              href={`/analytics?tab=habits&category=${encodeURIComponent(cat.category)}`}
+                              className="text-[13px] transition-opacity hover:opacity-70"
                               style={{
                                 fontFamily: theme.bodyFont,
                                 color: theme.text,
+                                textDecoration: "none",
                               }}
                             >
                               {cat.category}
-                            </span>
+                            </Link>
                             <div className="flex items-baseline gap-2.5">
                               <span
                                 className="font-mono text-[13px] tabular-nums"
@@ -1292,15 +1278,18 @@ export function Meridian({
                   }}
                 >
                   <div>
-                    <p
-                      className="text-[15px] font-medium"
+                    <Link
+                      href={`/transactions?search=${encodeURIComponent(topMerchants[0].merchant)}&date_range=all`}
+                      className="text-[15px] font-medium transition-opacity hover:opacity-70"
                       style={{
                         color: theme.text,
                         fontFamily: theme.bodyFont,
+                        textDecoration: "none",
+                        display: "block",
                       }}
                     >
                       {topMerchants[0].merchant}
-                    </p>
+                    </Link>
                     <p
                       className="mt-0.5 text-xs"
                       style={{ color: theme.textMuted }}
@@ -1366,15 +1355,17 @@ export function Meridian({
                             : "rgba(0,0,0,0.015)",
                       }}
                     >
-                      <p
-                        className="truncate text-[12px]"
+                      <Link
+                        href={`/transactions?search=${encodeURIComponent(m.merchant)}&date_range=all`}
+                        className="block truncate text-[12px] transition-opacity hover:opacity-70"
                         style={{
                           color: theme.text,
                           fontFamily: theme.bodyFont,
+                          textDecoration: "none",
                         }}
                       >
                         {m.merchant}
-                      </p>
+                      </Link>
                       <p
                         className="mt-0.5 font-mono text-[11px] tabular-nums"
                         style={{ color: theme.textMuted }}
@@ -1502,6 +1493,253 @@ export function Meridian({
             </ThemedPanel>
           </motion.div>
         )}
+        {/* ════════════════════════════════════════════════════════
+            RECENT TRANSACTIONS + QUICK LINKS — Bottom row
+            ════════════════════════════════════════════════════════ */}
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* Recent Transactions */}
+          {recentTransactions && recentTransactions.length > 0 && (
+            <motion.div {...sectionReveal()}>
+              <ThemedPanel className="p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <ThemedLabel className="text-[10px]">
+                    Recent Transactions
+                  </ThemedLabel>
+                  <Link
+                    href="/transactions"
+                    className="text-[11px] transition-opacity hover:opacity-80"
+                    style={{ color: theme.accent, fontFamily: theme.bodyFont }}
+                  >
+                    View All
+                  </Link>
+                </div>
+                <div className="space-y-3">
+                  {recentTransactions.slice(0, 5).map((txn) => {
+                    const catColor =
+                      CATEGORY_COLORS[txn.category] ?? "#6B7280";
+                    return (
+                      <div
+                        key={txn.id}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div
+                            className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                            style={{ backgroundColor: catColor }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className="truncate text-[13px]"
+                              style={{
+                                fontFamily: theme.bodyFont,
+                                color: theme.text,
+                              }}
+                            >
+                              {txn.description}
+                            </p>
+                            <p
+                              className="text-[10px]"
+                              style={{
+                                color: theme.textMuted,
+                                fontFamily: theme.bodyFont,
+                              }}
+                            >
+                              {new Date(txn.date).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className="ml-3 flex-shrink-0 font-mono text-[13px] tabular-nums"
+                          style={{ color: theme.text }}
+                        >
+                          {formatCurrency(txn.amount)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ThemedPanel>
+            </motion.div>
+          )}
+
+          {/* Analytics Preview + Import Prompt */}
+          <motion.div {...sectionReveal(0.08)} className="space-y-4">
+            {/* Analytics Preview */}
+            {(habits || recurring) && (
+              <ThemedPanel className="p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <ThemedLabel className="text-[10px]">
+                    Analytics
+                  </ThemedLabel>
+                  <Link
+                    href="/analytics"
+                    className="text-[11px] transition-opacity hover:opacity-80"
+                    style={{ color: theme.accent, fontFamily: theme.bodyFont }}
+                  >
+                    View Analytics
+                  </Link>
+                </div>
+                <div className="space-y-3">
+                  {habits && (
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-[12px]"
+                        style={{
+                          fontFamily: theme.bodyFont,
+                          color: theme.textMuted,
+                        }}
+                      >
+                        Impulse Score
+                      </span>
+                      <span
+                        className="font-mono text-[13px] tabular-nums"
+                        style={{ color: theme.text }}
+                      >
+                        {habits.impulse_spending.score}/100
+                      </span>
+                    </div>
+                  )}
+                  {recurringTotal > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-[12px]"
+                        style={{
+                          fontFamily: theme.bodyFont,
+                          color: theme.textMuted,
+                        }}
+                      >
+                        Subscriptions
+                      </span>
+                      <span
+                        className="font-mono text-[13px] tabular-nums"
+                        style={{ color: theme.text }}
+                      >
+                        {formatCurrency(recurringTotal)}/mo
+                      </span>
+                    </div>
+                  )}
+                  {forecast && (
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-[12px]"
+                        style={{
+                          fontFamily: theme.bodyFont,
+                          color: theme.textMuted,
+                        }}
+                      >
+                        Month Trajectory
+                      </span>
+                      <span
+                        className="text-[12px] font-medium"
+                        style={{
+                          fontFamily: theme.bodyFont,
+                          color:
+                            forecast.trajectory === "below_average"
+                              ? theme.success
+                              : forecast.trajectory === "above_average" ||
+                                  forecast.trajectory === "well_above_average"
+                                ? theme.danger
+                                : theme.accent,
+                        }}
+                      >
+                        {forecast.trajectory
+                          .replace(/_/g, " ")
+                          .replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </ThemedPanel>
+            )}
+
+            {/* Import Prompt */}
+            {lastImport !== undefined && (
+              (() => {
+                if (!lastImport) {
+                  return (
+                    <ThemedPanel className="p-5">
+                      <Link
+                        href="/import"
+                        className="flex items-center gap-3 transition-opacity hover:opacity-80"
+                      >
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={theme.accent}
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <span
+                          className="text-[13px]"
+                          style={{
+                            fontFamily: theme.bodyFont,
+                            color: theme.accent,
+                          }}
+                        >
+                          Import your first CSV
+                        </span>
+                      </Link>
+                    </ThemedPanel>
+                  );
+                }
+                const daysSince = Math.floor(
+                  (Date.now() - new Date(lastImport.imported_at).getTime()) /
+                    (1000 * 60 * 60 * 24)
+                );
+                if (daysSince > 14) {
+                  return (
+                    <ThemedPanel
+                      className="p-5"
+                      style={{
+                        borderLeft: `3px solid ${theme.accent}`,
+                      }}
+                    >
+                      <Link
+                        href="/import"
+                        className="flex items-center gap-3 transition-opacity hover:opacity-80"
+                      >
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={theme.accent}
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <span
+                          className="text-[13px]"
+                          style={{
+                            fontFamily: theme.bodyFont,
+                            color: theme.accent,
+                          }}
+                        >
+                          Your last import was {daysSince} days ago
+                        </span>
+                      </Link>
+                    </ThemedPanel>
+                  );
+                }
+                return null;
+              })()
+            )}
+          </motion.div>
+        </div>
       </div>
     </ThemedBackground>
   );

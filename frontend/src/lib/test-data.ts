@@ -229,11 +229,11 @@ export const TEST_FORECAST: ForecastData = {
   },
   vs_last_month: {
     last_month_total: 2187.32,
-    projected_change_pct: 13.28,
+    projected_diff_pct: 13.28,
   },
   vs_average: {
     avg_monthly: 2420.65,
-    projected_change_pct: 2.37,
+    projected_diff_pct: 2.37,
   },
   category_forecasts: [
     { category: "Dining", spent_so_far: 612.34, projected: 1008.45, avg_monthly: 876.23, vs_avg_pct: 15.09, trend: "up" },
